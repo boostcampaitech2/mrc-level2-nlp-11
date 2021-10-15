@@ -1,0 +1,14 @@
+**/wandb/
+**/__pycache__/
+**/.ipynb_checkpoints/
+**/data/
+**/results/*
+**/prediction/*
+**/best_model/*
+**/models/*
+**/.*/
+**/outputs/
+!.gitignore
+!sample_submission.csv
+nohup.*
+**run.sh
