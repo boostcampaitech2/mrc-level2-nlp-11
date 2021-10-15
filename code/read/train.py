@@ -21,7 +21,6 @@ from tokenizers.models import WordPiece
 
 from utils_qa import postprocess_qa_predictions, check_no_error
 from trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
 
 from arguments import (
     ModelArguments,
