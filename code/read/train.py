@@ -26,6 +26,7 @@ from arguments import (
     ModelArguments,
     DataTrainingArguments,
 )
+import mrc_reader
 
 logger = logging.getLogger(__name__)
 
@@ -62,32 +63,32 @@ def main():
 
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
-
+    
+    model, tokenizer = mrc_reader.Reader(model_name=model_args.model_name_or_path,
+                                        config_name= model_args.config_name,
+                                        tokenizer_name=model_args.tokenizer_name).get()
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name is not None
-        else model_args.model_name_or_path,
-    )
-    """
-    import reader
-    tokenizer = Model(model_Args.model_name_or_path)
-    """
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name is not None
-        else model_args.model_name_or_path,
-        # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-        # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-        # rust version이 비교적 속도가 빠릅니다.
-        use_fast=True,
-    )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-    )
+    # config = AutoConfig.from_pretrained(
+    #     model_args.config_name
+    #     if model_args.config_name is not None
+    #     else model_args.model_name_or_path,
+    # )
+
+    # tokenizer = AutoTokenizer.from_pretrained(
+    #     model_args.tokenizer_name
+    #     if model_args.tokenizer_name is not None
+    #     else model_args.model_name_or_path,
+    #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
+    #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
+    #     # rust version이 비교적 속도가 빠릅니다.
+    #     use_fast=True,
+    # )
+    # model = AutoModelForQuestionAnswering.from_pretrained(
+    #     model_args.model_name_or_path,
+    #     from_tf=bool(".ckpt" in model_args.model_name_or_path),
+    #     config=config,
+    # )
 
     print(
         type(training_args),
@@ -293,7 +294,8 @@ def run_mrc(
         )
         # Metric을 구할 수 있도록 Format을 맞춰줍니다.
         formatted_predictions = [
-            {"id": k, "prediction_text": v} for k, v in predictions.items()
+            {"id": k, "prediction_text": v} for k, v in 
+            predictions.items()
         ]
         if training_args.do_predict:
             return formatted_predictions

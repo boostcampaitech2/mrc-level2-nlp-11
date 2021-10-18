@@ -10,8 +10,12 @@ class Reader:
     ...
     Attributes
     -----------
-    name : str
+    model_name : str
         pre/custom_modelName
+    tokenizer_name : str
+        default = None -> It will be same with model_name
+    config_name : str
+        default = None -> It will be same with model_name
     params : dict
         custom_model param (default=None)
         # to be implemented
@@ -47,14 +51,17 @@ class Reader:
                 # rust version이 비교적 속도가 빠릅니다.
                 use_fast=True,
             )
-            model = AutoModelForQuestionAnswering.from_pretrained(self.model_name, config=model_config)
+            model = AutoModelForQuestionAnswering.from_pretrained(self.model_name, 
+                                                                from_tf=bool(".ckpt" in self.model_name),
+                                                                config=model_config)
             return model, model_tokenizer
         elif self.classifier == 'custom':
             sys.path.append("./models")
             # Custom_model일경우 model_name.py에서 tokenizer, config도 받아와야한다. 
             model_module = getattr(import_module(self.model_name), self.get_custom_class[self.model_name])
             model = model_module(self.params)
-            return model
+            tokenizer = None
+            return model, tokenizer
         else:
             print("잘못된 이름 또는 없는 모델입니다.")
 
