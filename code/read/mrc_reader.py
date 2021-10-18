@@ -193,7 +193,7 @@ class Reader:
         )
         return train_dataset
 
-    def prepare_validation_features(examples:Dataset):
+    def prepare_validation_features(self, examples:Dataset):
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
         tokenizer = self.tokenizer
