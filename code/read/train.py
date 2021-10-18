@@ -63,10 +63,11 @@ def main():
 
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
-    
-    model, tokenizer = mrc_reader.Reader(model_name=model_args.model_name_or_path,
-                                        config_name= model_args.config_name,
-                                        tokenizer_name=model_args.tokenizer_name).get()
+
+    reader = mrc_reader.Reader(model_name=model_args.model_name_or_path,
+                                config_name= model_args.config_name,
+                                tokenizer_name=model_args.tokenizer_name)
+    model, tokenizer = reader.get()
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
     # config = AutoConfig.from_pretrained(
