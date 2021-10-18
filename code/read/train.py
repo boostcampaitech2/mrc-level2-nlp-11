@@ -27,7 +27,6 @@ from arguments import (
     DataTrainingArguments,
 )
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -71,6 +70,10 @@ def main():
         if model_args.config_name is not None
         else model_args.model_name_or_path,
     )
+    """
+    import reader
+    tokenizer = Model(model_Args.model_name_or_path)
+    """
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
         if model_args.tokenizer_name is not None
