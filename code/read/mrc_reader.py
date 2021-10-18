@@ -21,8 +21,11 @@ class Reader:
         # to be implemented
     Methods
     --------
-    get_model(): -> Model
-        The method for getting model
+    set_model_and_tokenizer(): -> None
+        The method for setting model
+
+    get() -> (AutoModelForQuestionAnswering, AutoTokenizer)
+        The method for getting model and tokenizer
     """
 
     get_custom_class = {"testmodel":"Test"}
@@ -35,7 +38,7 @@ class Reader:
         self.params = params
         self.set_model_and_tokenizer()
 
-    def set_model_and_tokenizer(self):
+    def set_model_and_tokenizer(self) -> None:
         #Issue : # klue/bert-base, pre_klue/bert-base -> naming convention이 불편하다
         if self.classifier == 'pre':
             model_config = AutoConfig.from_pretrained(self.config_name
