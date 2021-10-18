@@ -27,7 +27,7 @@ class Reader:
 
     get_custom_class = {"testmodel":"Test"}
 
-    def __init__(self,model_name, tokenizer_name=None, config_name=None, params=None):
+    def __init__(self,model_name:str, tokenizer_name:str=None, config_name:str=None, params:dict=None):
         self.classifier = model_name.split('_')[0]
         self.model_name = model_name.split('_')[1]
         self.tokenizer_name = tokenizer_name
@@ -35,7 +35,7 @@ class Reader:
         self.params = params
         # self.get_model()
 
-    def get(self):
+    def get(self) -> (AutoModelForQuestionAnswering, AutoTokenizer):
         #Issue : # klue/bert-base, pre_klue/bert-base -> naming convention이 불편하다
         if self.classifier == 'pre':
             model_config = AutoConfig.from_pretrained(self.config_name
