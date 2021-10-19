@@ -1,4 +1,10 @@
-from transformers import (AutoConfig,AutoModelForQuestionAnswering, AutoTokenizer, EvalPrediction, DataCollatorWithPadding)
+from transformers import (
+    AutoConfig,
+    AutoModelForQuestionAnswering,
+    AutoTokenizer,
+    EvalPrediction,
+    DataCollatorWithPadding,
+)
 from utils_qa import postprocess_qa_predictions
 from importlib import import_module
 import sys
@@ -9,6 +15,7 @@ from arguments import (
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
 from datasets import load_metric, Dataset, DatasetDict
+
 
 class Reader:
     """
@@ -36,11 +43,17 @@ class Reader:
         The method for getting model and tokenizer
     """
 
-    get_custom_class = {"testmodel":"Test"}
+    get_custom_class = {"testmodel": "Test"}
 
-    def __init__(self, model_args: ModelArguments, data_args: DataTrainingArguments, datasets: DatasetDict, params:dict=None):
-        self.classifier = model_args.model_name_or_path.split('_')[0]
-        self.model_name = model_args.model_name_or_path.split('_')[1]
+    def __init__(
+        self,
+        model_args: ModelArguments,
+        data_args: DataTrainingArguments,
+        datasets: DatasetDict,
+        params: dict = None,
+    ):
+        self.classifier = model_args.model_name_or_path.split("_")[0]
+        self.model_name = model_args.model_name_or_path.split("_")[1]
         self.tokenizer_name = model_args.tokenizer_name
         self.config_name = model_args.config_name
 
@@ -50,13 +63,12 @@ class Reader:
         self.set_model_and_tokenizer()
         self.datasets = datasets
 
-    def set_model_and_tokenizer(self) -> None:
-        #Issue : # klue/bert-base, pre_klue/bert-base -> naming convention이 불편하다
-        if self.classifier == 'pre':
-            model_config = AutoConfig.from_pretrained(self.config_name
-                                                if self.config_name is not None
-                                                else self.model_name,
-                    )
+    def set_model_and_tokenizer(self) -> NoReturn:
+        # Issue : # klue/bert-base, pre_klue/bert-base -> naming convention이 불편하다
+        if self.classifier == "pre":
+            model_config = AutoConfig.from_pretrained(
+                self.config_name if self.config_name is not None else self.model_name,
+            )
             model_tokenizer = AutoTokenizer.from_pretrained(
                 self.tokenizer_name
                 if self.tokenizer_name is not None
@@ -66,37 +78,47 @@ class Reader:
                 # rust version이 비교적 속도가 빠릅니다.
                 use_fast=True,
             )
-            model = AutoModelForQuestionAnswering.from_pretrained(self.model_name, 
-                                                                from_tf=bool(".ckpt" in self.model_name),
-                                                                config=model_config)
+            model = AutoModelForQuestionAnswering.from_pretrained(
+                self.model_name,
+                from_tf=bool(".ckpt" in self.model_name),
+                config=model_config,
+            )
             self.model = model
             self.tokenizer = model_tokenizer
-        elif self.classifier == 'custom':
+        elif self.classifier == "custom":
             sys.path.append("./models")
-            # Custom_model일경우 model_name.py에서 tokenizer, config도 받아와야한다. 
-            model_module = getattr(import_module(self.model_name), self.get_custom_class[self.model_name])
+            # Custom_model일경우 model_name.py에서 tokenizer, config도 받아와야한다.
+            model_module = getattr(
+                import_module(self.model_name), self.get_custom_class[self.model_name]
+            )
             model = model_module(self.params)
             tokenizer = None
         else:
             print("잘못된 이름 또는 없는 모델입니다.")
 
-    def get(self) -> (AutoModelForQuestionAnswering, AutoTokenizer):
+    def get_model_tokenizer(self) -> (AutoModelForQuestionAnswering, AutoTokenizer):
         return self.model, self.tokenizer
-    
+
     def set_column_name(self, do_train: bool) -> NoReturn:
         if do_train:
             self.column_names = self.datasets["train"].column_names
         else:
             self.column_names = self.datasets["validation"].column_names
-        
-        self.question_column_name = "question" if "question" in self.column_names else self.column_names[0]
-        self.context_column_name = "context" if "context" in self.column_names else self.column_names[1]
-        self.answer_column_name = "answers" if "answers" in self.column_names else self.column_names[2]
+
+        self.question_column_name = (
+            "question" if "question" in self.column_names else self.column_names[0]
+        )
+        self.context_column_name = (
+            "context" if "context" in self.column_names else self.column_names[1]
+        )
+        self.answer_column_name = (
+            "answers" if "answers" in self.column_names else self.column_names[2]
+        )
 
     def set_max_seq_length(self, max_seq_length: int) -> NoReturn:
         self.max_seq_length = max_seq_length
 
-    def prepare_train_features(self, examples:Dataset):
+    def prepare_train_features(self, examples: Dataset):
         # Train preprocessing / 전처리를 진행하는 함수.
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
@@ -108,14 +130,18 @@ class Reader:
         pad_on_right = tokenizer.padding_side == "right"
 
         tokenized_examples = tokenizer(
-            examples[self.question_column_name if pad_on_right else self.context_column_name],
-            examples[self.context_column_name if pad_on_right else self.question_column_name],
+            examples[
+                self.question_column_name if pad_on_right else self.context_column_name
+            ],
+            examples[
+                self.context_column_name if pad_on_right else self.question_column_name
+            ],
             truncation="only_second" if pad_on_right else "only_first",
             max_length=self.max_seq_length,
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            #return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            # return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -193,21 +219,25 @@ class Reader:
         )
         return train_dataset
 
-    def prepare_validation_features(self, examples:Dataset):
+    def prepare_validation_features(self, examples: Dataset):
         # truncation과 padding(length가 짧을때만)을 통해 toknization을 진행하며, stride를 이용하여 overflow를 유지합니다.
         # 각 example들은 이전의 context와 조금씩 겹치게됩니다.
         tokenizer = self.tokenizer
         pad_on_right = tokenizer.padding_side == "right"
-        
+
         tokenized_examples = tokenizer(
-            examples[self.question_column_name if pad_on_right else self.context_column_name],
-            examples[self.context_column_name if pad_on_right else self.question_column_name],
+            examples[
+                self.question_column_name if pad_on_right else self.context_column_name
+            ],
+            examples[
+                self.context_column_name if pad_on_right else self.question_column_name
+            ],
             truncation="only_second" if pad_on_right else "only_first",
             max_length=self.max_seq_length,
             stride=self.data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            #return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            # return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if self.data_args.pad_to_max_length else False,
         )
 
@@ -232,7 +262,7 @@ class Reader:
                 (o if sequence_ids[k] == context_index else None)
                 for k, o in enumerate(tokenized_examples["offset_mapping"][i])
             ]
-        
+
         return tokenized_examples
 
     def get_validation_dataset(self) -> Dataset:
@@ -249,7 +279,7 @@ class Reader:
         return eval_dataset
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # model = Reader("custom_testmodel", params={"layer":30, "classNum":20}).get() # 통과
     reader = Reader("pre_klue/bert-base")
     model, tokenizer = reader.get()

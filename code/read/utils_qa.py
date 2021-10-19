@@ -27,7 +27,13 @@ from tqdm.auto import tqdm
 
 import torch
 import random
-from transformers import is_torch_available, PreTrainedTokenizerFast, TrainingArguments
+from transformers import (
+    is_torch_available,
+    PreTrainedTokenizerFast,
+    TrainingArguments,
+    EvalPrediction,
+    set_seed as set_tf_seed,
+)
 from transformers.trainer_utils import get_last_checkpoint
 
 from datasets import DatasetDict
@@ -40,6 +46,10 @@ from arguments import (
 logger = logging.getLogger(__name__)
 
 
+def compute_metrics(metric, p: EvalPrediction):
+    return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+
 def set_seed(seed: int = 42):
     """
     seed 고정하는 함수 (random, numpy, torch)
@@ -49,6 +59,7 @@ def set_seed(seed: int = 42):
     """
     random.seed(seed)
     np.random.seed(seed)
+    set_tf_seed(seed)
     if is_torch_available():
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
@@ -314,6 +325,33 @@ def postprocess_qa_predictions(
                 )
 
     return all_predictions
+
+
+# Post-processing:
+def post_processing_function(
+    examples, features, predictions, training_args, max_answer_length
+):
+    # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
+    predictions = postprocess_qa_predictions(
+        examples=examples,
+        features=features,
+        predictions=predictions,
+        max_answer_length=max_answer_length,
+        output_dir=training_args.output_dir,
+    )
+    # Metric을 구할 수 있도록 Format을 맞춰줍니다.
+    formatted_predictions = [
+        {"id": k, "prediction_text": v} for k, v in predictions.items()
+    ]
+    if training_args.do_predict:
+        return formatted_predictions
+
+    elif training_args.do_eval:
+        references = [
+            {"id": ex["id"], "answers": ex[answer_column_name]}
+            for ex in datasets["validation"]
+        ]
+        return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
 
 def check_no_error(

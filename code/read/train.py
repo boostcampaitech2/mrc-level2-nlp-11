@@ -4,16 +4,14 @@ import sys
 
 from typing import List, Callable, NoReturn, NewType, Any
 import dataclasses
-from datasets import load_metric, load_from_disk, Dataset, DatasetDict
+from datasets import load_from_disk, Dataset, DatasetDict
 
 from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
 
 from transformers import (
     DataCollatorWithPadding,
-    EvalPrediction,
     HfArgumentParser,
     TrainingArguments,
-    set_seed,
 )
 
 from tokenizers import Tokenizer
@@ -64,44 +62,16 @@ def main():
     datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
 
-    reader = Reader(model_args=model_args,
-                    data_args=data_args,
-                    datasets=datasets)
-    model, tokenizer = reader.get()
-    # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
-    # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    # config = AutoConfig.from_pretrained(
-    #     model_args.config_name
-    #     if model_args.config_name is not None
-    #     else model_args.model_name_or_path,
-    # )
+    # Reader Class 생성
+    reader = Reader(model_args=model_args, data_args=data_args, datasets=datasets)
 
-    # tokenizer = AutoTokenizer.from_pretrained(
-    #     model_args.tokenizer_name
-    #     if model_args.tokenizer_name is not None
-    #     else model_args.model_name_or_path,
-    #     # 'use_fast' argument를 True로 설정할 경우 rust로 구현된 tokenizer를 사용할 수 있습니다.
-    #     # False로 설정할 경우 python으로 구현된 tokenizer를 사용할 수 있으며,
-    #     # rust version이 비교적 속도가 빠릅니다.
-    #     use_fast=True,
-    # )
-    # model = AutoModelForQuestionAnswering.from_pretrained(
-    #     model_args.model_name_or_path,
-    #     from_tf=bool(".ckpt" in model_args.model_name_or_path),
-    #     config=config,
-    # )
-
-    print(
-        type(training_args),
-        type(model_args),
-        type(datasets),
-        type(tokenizer),
-        type(model),
-    )
+    model, tokenizer = reader.get_model_tokenizer()
 
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
-        run_mrc(data_args, training_args, model_args, datasets, tokenizer, model, reader)
+        run_mrc(
+            data_args, training_args, model_args, datasets, tokenizer, model, reader
+        )
 
 
 def run_mrc(
@@ -111,7 +81,7 @@ def run_mrc(
     datasets: DatasetDict,
     tokenizer,
     model,
-    reader: Reader, 
+    reader: Reader,
 ) -> NoReturn:
 
     # dataset을 전처리합니다.
@@ -133,7 +103,6 @@ def run_mrc(
 
     # Validation preprocessing
 
-
     if training_args.do_eval:
         eval_dataset = reader.get_validation_dataset()
 
@@ -144,40 +113,8 @@ def run_mrc(
         tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
     )
 
-    # Post-processing:
-    def post_processing_function(examples, features, predictions, training_args):
-        # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
-        predictions = postprocess_qa_predictions(
-            examples=examples,
-            features=features,
-            predictions=predictions,
-            max_answer_length=data_args.max_answer_length,
-            output_dir=training_args.output_dir,
-        )
-        # Metric을 구할 수 있도록 Format을 맞춰줍니다.
-        formatted_predictions = [
-            {"id": k, "prediction_text": v} for k, v in 
-            predictions.items()
-        ]
-        if training_args.do_predict:
-            return formatted_predictions
-
-        elif training_args.do_eval:
-            references = [
-                {"id": ex["id"], "answers": ex[answer_column_name]}
-                for ex in datasets["validation"]
-            ]
-            return EvalPrediction(
-                predictions=formatted_predictions, label_ids=references
-            )
-
-    metric = load_metric("squad")
-
-    def compute_metrics(p: EvalPrediction):
-        return metric.compute(predictions=p.predictions, references=p.label_ids)
-
     # Trainer 초기화
-    trainer = QuestionAnsweringTrainer( 
+    trainer = QuestionAnsweringTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
@@ -186,6 +123,7 @@ def run_mrc(
         tokenizer=tokenizer,
         data_collator=data_collator,
         post_process_function=post_processing_function,
+        max_answer_length=data_args.max_answer_length,
         compute_metrics=compute_metrics,
     )
 
