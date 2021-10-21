@@ -25,6 +25,7 @@ from transformers import (
     AdamW,
     get_linear_schedule_with_warmup,
     TrainingArguments,
+    set_seed,
 )
 from datasets import (
     Dataset,
@@ -102,7 +103,8 @@ class DenseRetrieval:
 
         # 1. In-Batch-Negative 만들기
         # CORPUS를 np.array로 변환해줍니다.
-        corpus = np.array(list(set([example for example in dataset["context"]])))
+        #        corpus = np.array(list(set([example for example in dataset["context"]]))) #original
+        corpus = np.array(list([example for example in dataset["context"]]))
         p_with_neg = []
 
         for c in dataset["context"]:
@@ -362,41 +364,76 @@ if __name__ == "__main__":
         type=str,
         help="",
     )
-    parser.add_argument("--data_path", default="../../data", type=str, help="")
     parser.add_argument(
-        "--context_path", default="wikipedia_documents.json", type=str, help=""
+        "--data_path", default="../../data", type=str, help="dataset directory path"
+    )
+    parser.add_argument(
+        "--context_path",
+        default="wikipedia_documents.json",
+        type=str,
+        help="context for retrieval",
     )
     parser.add_argument("--use_faiss", default=False, type=bool, help="")
-    parser.add_argument("--run_name", default="dense_retrieval", type=str, help="")
+    parser.add_argument(
+        "--run_name", default="dense_retrieval", type=str, help="wandb run name"
+    )
+    parser.add_argument(
+        "--num_train_epochs", default=2, type=int, help="number of epochs for train"
+    )
+    parser.add_argument(
+        "--train_batch", default=2, type=int, help="batch size for train"
+    )
+    parser.add_argument(
+        "--eval_batch", default=2, type=int, help="batch size for evaluation"
+    )
+    parser.add_argument(
+        "--learning_rate", default=2e-5, type=float, help="learning rate for train"
+    )
+    parser.add_argument(
+        "--weight_decay", default=0.01, type=float, help="weight decay coeff for train"
+    )
+    parser.add_argument("--save_steps", default=500, type=int, help="model save steps")
+    parser.add_argument(
+        "--num_neg", default=3, type=int, help="number of negative samples for training"
+    )
+    parser.add_argument(
+        "--random_seed", default=211, type=int, help="random seed for numpy and torch"
+    )
 
     args = parser.parse_args()
+
+    ## Reproducibility
+    torch.manual_seed(args.random_seed)
+    np.random.seed(args.random_seed)
+    set_seed(args.random_seed)
+    torch.cuda.manual_seed(args.random_seed)
 
     org_dataset = load_from_disk(args.dataset_name)
     train_dataset = org_dataset["train"]
     validation_dataset = org_dataset["validation"]
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
 
-    p_encoder = BertEncoder.from_pretrained("./encoder/p_encoder_ver1")
-    q_encoder = BertEncoder.from_pretrained("./encoder/q_encoder_ver1")
+    p_encoder = BertEncoder.from_pretrained(args.model_name_or_path)
+    q_encoder = BertEncoder.from_pretrained(args.model_name_or_path)
     p_encoder.cuda()
     q_encoder.cuda()
 
     model_args = TrainingArguments(
         output_dir="dense_retireval",
         evaluation_strategy="epoch",
-        learning_rate=2e-5,
-        per_device_train_batch_size=2,
-        per_device_eval_batch_size=2,
-        num_train_epochs=2,
-        weight_decay=0.01,
+        learning_rate=args.learning_rate,
+        per_device_train_batch_size=args.train_batch,
+        per_device_eval_batch_size=args.eval_batch,
+        num_train_epochs=args.num_train_epochs,
+        weight_decay=args.weight_decay,
         save_strategy="steps",
-        save_steps=500,
+        save_steps=args.save_steps,
     )
     wandb.init(entity="ai_esg", name=args.run_name)
     wandb.config.update(model_args)
 
     retriever = DenseRetrieval(
-        args, model_args, train_dataset, 3, tokenizer, p_encoder, q_encoder
+        args, model_args, train_dataset, args.num_neg, tokenizer, p_encoder, q_encoder
     )
     retriever.train()
 
