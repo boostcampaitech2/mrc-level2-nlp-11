@@ -103,7 +103,8 @@ class DenseRetrieval:
 
         # 1. In-Batch-Negative 만들기
         # CORPUS를 np.array로 변환해줍니다.
-        corpus = np.array(list(set([example for example in dataset["context"]])))
+        #        corpus = np.array(list(set([example for example in dataset["context"]]))) #original
+        corpus = np.array(list([example for example in dataset["context"]]))
         p_with_neg = []
 
         for c in dataset["context"]:
