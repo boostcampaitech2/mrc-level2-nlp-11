@@ -25,6 +25,7 @@ from arguments import (
     DataTrainingArguments,
 )
 from mrc_reader import *
+import wandb
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +33,15 @@ logger = logging.getLogger(__name__)
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
-
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments)
     )
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    training_args.report_to = ["wandb"]
+    training_args.run_name = model_args.custom_run_name
+    training_args.logging_dir = model_args.custom_logging_dir
+    training_args.logging_steps = model_args.custom_logging_steps
     print(model_args.model_name_or_path)
-
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     # training_args.per_device_train_batch_size = 4
     # print(training_args.per_device_train_batch_size)
@@ -46,6 +49,12 @@ def main():
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
 
+    # print("wandb connecting...")
+    # print("="*30)
+    # print(f"run_name : {model_args.wandb_run_name}")
+    # print("="*30)
+    # wandb.init(entity="ai_esg", name=model_args.wandb_run_name)
+    # wandb.config.update(model_args)
     # logging 설정
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -    %(message)s",
@@ -63,7 +72,8 @@ def main():
     print(datasets)
 
     # Reader Class 생성
-    reader = Reader(model_args=model_args, data_args=data_args, datasets=datasets)
+    reader = Reader(model_args=model_args,
+                    data_args=data_args, datasets=datasets)
 
     model, tokenizer = reader.get_model_tokenizer()
 
@@ -145,7 +155,8 @@ def run_mrc(
         trainer.save_metrics("train", metrics)
         trainer.save_state()
 
-        output_train_file = os.path.join(training_args.output_dir, "train_results.txt")
+        output_train_file = os.path.join(
+            training_args.output_dir, "train_results.txt")
 
         with open(output_train_file, "w") as writer:
             logger.info("***** Train results *****")

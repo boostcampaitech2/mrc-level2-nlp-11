@@ -27,6 +27,27 @@ class ModelArguments:
         },
     )
 
+    custom_run_name: Optional[str] = field(
+        default="test/reader",
+        metadata={
+            "help": "The name of experiment for wandb"
+        },
+    )
+
+    custom_logging_dir: Optional[str] = field(
+        default="logs/",
+        metadata={
+            "help": "The path for saving logs"
+        },
+    )
+
+    custom_logging_steps: int = field(
+        default=500,
+        metadata={
+            "help": "The steps for creating logs"
+        },
+    )
+
 
 @dataclass
 class DataTrainingArguments:
@@ -76,7 +97,8 @@ class DataTrainingArguments:
     )
     eval_retrieval: bool = field(
         default=True,
-        metadata={"help": "Whether to run passage retrieval using sparse embedding."},
+        metadata={
+            "help": "Whether to run passage retrieval using sparse embedding."},
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
