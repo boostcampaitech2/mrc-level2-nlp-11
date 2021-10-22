@@ -74,6 +74,7 @@ class DenseRetrieval:
                 self.p_embedding = pickle.load(file)
             print("Embedding pickle load.")
         else:
+            p_encoder = self.p_encoder
             p_embs = []
             with torch.no_grad():
                 p_encoder.eval()
@@ -86,7 +87,6 @@ class DenseRetrieval:
                     p_embs.append(p_emb)
 
             p_embs = torch.Tensor(p_embs).squeeze()
-            print(p_embs.size())
 
             self.p_embedding = p_embs
             with open(emd_path, "wb") as file:
@@ -294,8 +294,8 @@ class DenseRetrieval:
                     loss = F.nll_loss(sim_scores, targets)
                     tepoch.set_postfix(loss=f"{str(loss.item())}")
 
-                    if count % 100 == 0:
-                        wandb.log({"loss": loss.item()}, step=count)
+                    if global_step % 100 == 0:
+                        wandb.log({"loss": loss.item()}, step=global_step)
 
                     loss.backward()
                     optimizer.step()
@@ -310,8 +310,8 @@ class DenseRetrieval:
 
                     del p_inputs, q_inputs
 
-        p_encoder.save_pretrained(save_directory="./encoder/p_encoder_ver2")
-        q_encoder.save_pretrained(save_directory="./encoder/q_encoder_ver2")
+        p_encoder.save_pretrained(save_directory="./encoder/p_encoder_ver1")
+        q_encoder.save_pretrained(save_directory="./encoder/q_encoder_ver1")
 
     def get_relevant_doc(
         self, query, k=1, model_args=None, p_encoder=None, q_encoder=None
@@ -356,6 +356,62 @@ class DenseRetrieval:
         rank = torch.argsort(dot_prod_scores, dim=1, descending=True).squeeze()
 
         return rank[:k]
+
+    def retrieval(self, query_or_dataset, topk=1):
+        assert self.p_embedding is not None
+        total = []
+        doc_scores, doc_indices = self.get_relevant_doc_bulk(
+            query_or_dataset["question"], k=topk
+        )
+        for idx, example in enumerate(tqdm(query_or_dataset, desc="Dense retrieval: ")):
+            tmp = {
+                # Query와 해당 id를 반환합니다.
+                "question": example["question"],
+                "id": example["id"],
+                # Retrieve한 Passage의 id, context를 반환합니다.
+                "context_id": doc_indices[idx],
+                "context": " ".join([self.contexts[pid] for pid in doc_indices[idx]]),
+                "scores": doc_scores[idx],
+            }
+            if "context" in example.keys() and "answers" in example.keys():
+                # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                tmp["original_context"] = example["context"]
+                tmp["answers"] = example["answers"]
+            total.append(tmp)
+
+        cqas = pd.DataFrame(total)
+        return cqas
+
+    def get_relevant_doc_bulk(self, queries, k=1):
+        # 수정 필요
+        q_encoder = self.q_encoder
+
+        q_embs = []
+        with torch.no_grad():
+            q_encoder.eval()
+
+            for q in tqdm(queries):
+                q = tokenizer(
+                    q, padding="max_length", truncation=True, return_tensors="pt"
+                ).to("cuda")
+                q_emb = q_encoder(**q).to("cpu").detach().numpy()
+                q_embs.append(q_emb)
+
+        q_embs = torch.Tensor(q_embs).squeeze()
+        result = torch.matmul(q_embs, torch.transpose(self.p_embedding, 0, 1))
+
+        if not isinstance(result, np.ndarray):
+            result = np.array(result.tolist())
+        doc_scores = []
+        doc_indices = []
+        for i in range(result.shape[0]):
+            # print(np.argsort(result[i, :]))
+            sorted_result = np.argsort(result[i, :])[::-1]
+            # print(sorted_result)
+            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+            doc_indices.append(sorted_result.tolist()[:k])
+
+        return doc_scores, doc_indices
 
 
 if __name__ == "__main__":
@@ -446,3 +502,14 @@ if __name__ == "__main__":
     retriever.train()
 
     retriever.get_dense_embedding()
+
+    df = retriever.retrieval(train_dataset, topk=10)
+
+    df["correct"] = df["original_context"] == df["context"]
+    for i in range(100):
+        print(df.iloc[i])
+
+    print(
+        "correct retrieval result by exhaustive search",
+        df["correct"].sum() / len(df),  # acc
+    )
