@@ -106,16 +106,22 @@ class DenseRetrieval:
         #        corpus = np.array(list(set([example for example in dataset["context"]]))) #original
         corpus = np.array(list([example for example in dataset["context"]]))
         p_with_neg = []
+        p_idxs = []
 
         for c in dataset["context"]:
             while True:
                 neg_idxs = np.random.randint(len(corpus), size=num_neg)
+                p_idx = np.random.randint(num_neg + 1)
 
                 if not c in corpus[neg_idxs]:
                     p_neg = corpus[neg_idxs]
 
-                    p_with_neg.append(c)
-                    p_with_neg.extend(p_neg)
+                    #                    p_with_neg.append(c)
+                    #                    p_with_neg.extend(p_neg)
+
+                    p_with_neg.extend(list(np.insert(p_neg, p_idx, c)))
+                    p_idxs.append(p_idx)
+
                     break
 
         # 2. (Question, Passage) 데이터셋 만들어주기
@@ -145,6 +151,7 @@ class DenseRetrieval:
             q_seqs["input_ids"],
             q_seqs["attention_mask"],
             q_seqs["token_type_ids"],
+            torch.tensor(p_idxs),
         )
 
         self.train_dataloader = DataLoader(
@@ -234,10 +241,10 @@ class DenseRetrieval:
 
         train_iterator = tqdm(range(int(model_args.num_train_epochs)), desc="Epoch")
         # for _ in range(int(args.num_train_epochs)):
+        count = 0
         for _ in train_iterator:
 
             with tqdm(self.train_dataloader, unit="batch") as tepoch:
-                count = 0
                 for batch in tepoch:
                     count += 1
                     p_encoder.train()
@@ -248,7 +255,8 @@ class DenseRetrieval:
                     # ).long()  # positive example은 전부 첫 번째에 위치하므로
                     # targets = targets.to(model_args.device)
                     # 정상적으로 출력이 되는 코드에서도
-                    targets = torch.arange(0, batch_size).long()  # 실습 코드에서 가져옴 5강
+                    #                    targets = torch.arange(0, batch_size).long()  # 실습 코드에서 가져옴 5강
+                    targets = batch[6]
                     targets = targets.to(model_args.device)
                     p_inputs = {
                         "input_ids": batch[0]
