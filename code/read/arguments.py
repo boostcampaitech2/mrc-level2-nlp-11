@@ -27,27 +27,6 @@ class ModelArguments:
         },
     )
 
-    custom_run_name: Optional[str] = field(
-        default="test/reader",
-        metadata={
-            "help": "The name of experiment for wandb"
-        },
-    )
-
-    custom_logging_dir: Optional[str] = field(
-        default="logs/",
-        metadata={
-            "help": "The path for saving logs"
-        },
-    )
-
-    custom_logging_steps: int = field(
-        default=500,
-        metadata={
-            "help": "The steps for creating logs"
-        },
-    )
-
 
 @dataclass
 class DataTrainingArguments:
@@ -97,8 +76,7 @@ class DataTrainingArguments:
     )
     eval_retrieval: bool = field(
         default=True,
-        metadata={
-            "help": "Whether to run passage retrieval using sparse embedding."},
+        metadata={"help": "Whether to run passage retrieval using sparse embedding."},
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
@@ -111,4 +89,33 @@ class DataTrainingArguments:
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+
+
+@dataclass
+class TrainerArguments:
+    output_dir: str = field(
+        default="saved_checkpoint",
+        metadata={"help": "The name of directory where the checkpoints are saved"},
+    )
+    lr: float = field(default=1e-5, metadata={"help": "The value of Learning-rate"})
+    train_batch_size: int = field(
+        default=4, metadata={"help": "The batch size of train data"}
+    )
+    eval_batch_size: int = field(
+        default=4, metadata={"help": "The batch size of evaluation data"}
+    )
+    epochs: int = field(default=5, metadata={"help": "The number of epochs"})
+
+    logging_steps: int = field(
+        default=500, metadata={"help": "The number of steps for logging"}
+    )
+    run_name: str = field(
+        default="Reader-bert_base", metadata={"help": "The run name of wandb"}
+    )
+    save_steps: int = field(
+        default=500, metadata={"help": "The number of steps for saving"}
+    )
+    eval_steps: int = field(
+        default=500, metadata={"help": "The nuber of steps for evaluation"}
     )

@@ -36,6 +36,8 @@ class QuestionAnsweringTrainer(Trainer):
         eval_examples=None,
         max_answer_length=None,
         post_process_function=None,
+        dataset=None,
+        answer_column_name=None,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
@@ -43,6 +45,8 @@ class QuestionAnsweringTrainer(Trainer):
         self.post_process_function = post_process_function
         self.max_answer_length = max_answer_length
         self.metric = load_metric("squad")
+        self.dataset = dataset
+        self.answer_column_name = answer_column_name
 
     def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
@@ -77,6 +81,8 @@ class QuestionAnsweringTrainer(Trainer):
                 output.predictions,
                 self.args,
                 self.max_answer_length,
+                self.dataset,
+                self.answer_column_name,
             )
             metrics = self.compute_metrics(self.metric, eval_preds)
 
@@ -127,5 +133,7 @@ class QuestionAnsweringTrainer(Trainer):
             output.predictions,
             self.args,
             self.max_answer_length,
+            self.dataset,
+            self.answer_column_name,
         )
         return predictions
