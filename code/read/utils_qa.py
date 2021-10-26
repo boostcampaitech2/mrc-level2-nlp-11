@@ -36,7 +36,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
-from datasets import DatasetDict
+from datasets import DatasetDict, load_metric
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -44,10 +44,17 @@ from arguments import (
 
 
 logger = logging.getLogger(__name__)
+metric = load_metric("squad")
 
 
-def compute_metrics(metric, p: EvalPrediction):
-    return metric.compute(predictions=p.predictions, references=p.label_ids)
+def compute_metrics(p: EvalPrediction):
+    global metric
+    result = metric.compute(predictions=p.predictions, references=p.label_ids)
+    """
+    {"exact_match: socre, "f1 score": score}
+    """
+    return result
+    # return metric.compute(predictions=p.predictions, references=p.label_ids)
 
 
 def set_seed(seed: int = 42):
@@ -329,7 +336,13 @@ def postprocess_qa_predictions(
 
 # Post-processing:
 def post_processing_function(
-    examples, features, predictions, training_args, max_answer_length
+    examples,
+    features,
+    predictions,
+    training_args,
+    max_answer_length,
+    datasets,
+    answer_column_name,
 ):
     # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
     predictions = postprocess_qa_predictions(
