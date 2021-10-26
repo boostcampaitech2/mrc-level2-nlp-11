@@ -49,12 +49,8 @@ class DenseRetrieval:
         torch.cuda.empty_cache()
 
     def save_embedding(self):
-        ##
-        wiki_data_list = WikiDataset(self.args.context_path, self.args.tokenizer_name)
-        ##
 
-        # pickle_name = f"dense_embedding.bin"
-        # emd_path = os.path.join(self.args.data_path, pickle_name)
+        wiki_data_list = WikiDataset(self.args.context_path, self.args.tokenizer_name)
 
         emb_path = self.args.save_pickle_path
         p_encoder = self.p_encoder
@@ -69,10 +65,6 @@ class DenseRetrieval:
                 ).to("cuda")
                 p_emb = p_encoder(**p).to("cpu").detach().numpy()
                 p_embs.append(p_emb)
-
-            # for p in tqdm(wiki_data_list.get_tokens()):
-            # p_emb = p_encoder(**p).to("cpu").detach().numpy()
-            # p_embs.append(p_emb)
 
         p_embs = torch.Tensor(p_embs).squeeze()
 
@@ -250,10 +242,10 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
-        "--save_path_q", default="./encoder/q_encoder_multi_10", type=str, help=""
+        "--save_path_q", default="./encoder/q_encoder", type=str, help=""
     )
     parser.add_argument(
-        "--save_path_p", default="./encoder/p_encoder_multi_10", type=str, help=""
+        "--save_path_p", default="./encoder/p_encoder", type=str, help=""
     )
     parser.add_argument(
         "--dataset_name", default="../../data/train_dataset", type=str, help=""

@@ -25,8 +25,6 @@ class RetrievalInference:
         self.contexts = wiki_data.get_context()
 
     def get_dense_embedding(self):
-        pickle_name = f"dense_embedding.bin"
-        # emd_path = os.path.join(self.data_path, pickle_name)
         emd_path = self.pickle_path
 
         if os.path.isfile(emd_path):
@@ -150,9 +148,16 @@ if __name__ == "__main__":
         help="context for retrieval",
     )
 
+    parser.add_argument(
+        "--load_path_q",
+        default="./encoder/q_encoder",
+        type=str,
+        help="q_encoder saved path",
+    )
+
     args = parser.parse_args()
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
-    q_encoder = BertEncoder.from_pretrained("./encoder/q_encoder_multi_10").cuda()
+    q_encoder = BertEncoder.from_pretrained(args.load_path_q).cuda()
     wiki_data = WikiDataset(args.pickle_path, args.context_path, args.tokenizer_name)
 
     org_dataset = load_from_disk(args.dataset_name)
@@ -162,8 +167,8 @@ if __name__ == "__main__":
     retrieval = RetrievalInference(args, q_encoder, tokenizer, wiki_data)
     retrieval.get_dense_embedding()
 
-    # df = retrieval.retrieval(validation_dataset, topk=5)
-    df = retrieval.retrieval(train_dataset, topk=50)
+    df = retrieval.retrieval(validation_dataset, topk=5)
+    # df = retrieval.retrieval(train_dataset, topk=50)
 
     df = retrieval.get_acc_score(df)
 

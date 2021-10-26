@@ -170,7 +170,6 @@ class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
 class WikiDataset:
     def __init__(self, context_path, tokenizer_name) -> None:
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-        # with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
         with open(context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
@@ -185,7 +184,3 @@ class WikiDataset:
         return self.tokenizer(
             contexts, padding="max_length", truncation=True, return_tensors="pt"
         ).to("cuda")
-
-
-# self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
-# self.ids = list(range(len(self.contexts)))
