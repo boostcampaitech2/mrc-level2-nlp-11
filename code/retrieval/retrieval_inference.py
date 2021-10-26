@@ -143,7 +143,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--context_path",
-        default="wikipedia_documents.json",
+        default="../../data/wikipedia_documents.json",
         type=str,
         help="context for retrieval",
     )
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
     q_encoder = BertEncoder.from_pretrained(args.load_path_q).cuda()
-    wiki_data = WikiDataset(args.pickle_path, args.context_path, args.tokenizer_name)
+    wiki_data = WikiDataset(args.context_path, args.tokenizer_name)
 
     org_dataset = load_from_disk(args.dataset_name)
     train_dataset = org_dataset["train"]

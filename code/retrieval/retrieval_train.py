@@ -69,7 +69,7 @@ class DenseRetrieval:
         p_embs = torch.Tensor(p_embs).squeeze()
 
         p_embedding = p_embs
-        with open(emd_path, "wb") as file:
+        with open(emb_path, "wb") as file:
             pickle.dump(p_embedding, file)
         print("Embedding pickle saved.")
 
@@ -345,5 +345,5 @@ if __name__ == "__main__":
         q_encoder,
     )
 
-    retriever.train()
+    #    retriever.train()
     retriever.save_embedding()
