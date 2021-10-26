@@ -50,16 +50,19 @@ class DenseRetrieval:
 
     def save_embedding(self):
 
-        wiki_data_list = WikiDataset(self.args.data_path, self.args.context_path)
+        wiki_data_list = WikiDataset(self.args.context_path, self.args.tokenizer_name)
 
-        pickle_name = f"dense_embedding.bin"
-        emd_path = os.path.join(self.args.data_path, pickle_name)
+        emb_path = self.args.save_pickle_path
         p_encoder = self.p_encoder
         p_embs = []
         with torch.no_grad():
             p_encoder.eval()
+            test_p = wiki_data_list.get_tokens()
 
-            for p in tqdm(wiki_data_list.get_tokens()):
+            for p in tqdm(wiki_data_list.contexts):
+                p = wiki_data_list.tokenizer(
+                    p, padding="max_length", truncation=True, return_tensors="pt"
+                ).to("cuda")
                 p_emb = p_encoder(**p).to("cpu").detach().numpy()
                 p_embs.append(p_emb)
 
@@ -196,11 +199,11 @@ class DenseRetrieval:
                     torch.cuda.empty_cache()
                     global_step += 1
                     del p_inputs, q_inputs
-                    if global_step % 10 == 0:  # args 추가 필요
+                    if global_step % 100 == 0:  # args 추가 필요
                         wandb.log({"loss": loss}, step=global_step)
 
-                    if global_step % 50 == 0:
-                        self.eval(p_encoder, q_encoder, global_step)
+                    # if global_step % 50 == 0:
+                    #    self.eval(p_encoder, q_encoder, global_step)
 
         p_encoder.save_pretrained(save_directory=args.save_path_p)  # args
         q_encoder.save_pretrained(save_directory=args.save_path_q)  # args
@@ -248,26 +251,24 @@ if __name__ == "__main__":
         "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
-        "--model_name_or_path",
-        default="klue/bert-base",
+        "--tokenizer_name",
+        default="bert-base-multilingual-cased",
         type=str,
         help="",
     )
-    parser.add_argument(
-        "--data_path", default="../../data", type=str, help="dataset directory path"
-    )
+
     parser.add_argument(
         "--context_path",
-        default="wikipedia_documents.json",
+        default="../../data/wikipedia_documents.json",
         type=str,
-        help="context for retrieval",
+        help="context path for retrieval",
     )
     parser.add_argument("--use_faiss", default=False, type=bool, help="")
     parser.add_argument(
         "--run_name", default="dense_retrieval", type=str, help="wandb run name"
     )
     parser.add_argument(
-        "--num_train_epochs", default=1, type=int, help="number of epochs for train"
+        "--num_train_epochs", default=10, type=int, help="number of epochs for train"
     )
     parser.add_argument(
         "--train_batch", default=2, type=int, help="batch size for train"
@@ -287,7 +288,24 @@ if __name__ == "__main__":
     parser.add_argument(
         "--random_seed", default=211, type=int, help="random seed for numpy and torch"
     )
-
+    parser.add_argument(
+        "--p_enc_name_or_path",
+        default="bert-base-multilingual-cased",
+        type=str,
+        help="name or path for p_encoder",
+    )
+    parser.add_argument(
+        "--q_enc_name_or_path",
+        default="bert-base-multilingual-cased",
+        type=str,
+        help="name or path for q_encoder",
+    )
+    parser.add_argument(
+        "--save_pickle_path",
+        default="../../data/dense_embedding.bin",
+        type=str,
+        help="wiki embedding save path",
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.random_seed)
@@ -295,10 +313,10 @@ if __name__ == "__main__":
     set_seed(args.random_seed)
     torch.cuda.manual_seed(args.random_seed)
 
-    p_encoder = BertEncoder.from_pretrained(args.model_name_or_path).cuda()
-    q_encoder = BertEncoder.from_pretrained(args.model_name_or_path).cuda()
+    p_encoder = BertEncoder.from_pretrained(args.p_enc_name_or_path).cuda()
+    q_encoder = BertEncoder.from_pretrained(args.q_enc_name_or_path).cuda()
 
-    # 이후 arg 뺄수 있으면 빼기
+    # 이후 arg 뺄 수 있으면 빼기
     model_args = TrainingArguments(
         output_dir="dense_retireval",
         evaluation_strategy="epoch",
@@ -314,9 +332,9 @@ if __name__ == "__main__":
 
     # TrainRetrievalDataset
     train_dataset = TrainRetrievalInBatchDataset(
-        args.model_name_or_path, args.dataset_name, args.num_neg
+        args.tokenizer_name, args.dataset_name, args.num_neg
     )
-    validation_dataset = ValRetrievalDataset(args.model_name_or_path, args.dataset_name)
+    validation_dataset = ValRetrievalDataset(args.tokenizer_name, args.dataset_name)
     retriever = DenseRetrieval(
         args,
         model_args,
