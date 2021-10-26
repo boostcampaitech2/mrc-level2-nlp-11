@@ -19,14 +19,15 @@ from datasets import (
 
 class RetrievalInference:
     def __init__(self, args, q_encoder, tokenizer, wiki_data) -> None:
-        self.data_path = args.data_path
+        self.pickle_path = args.pickle_path
         self.q_encoder = q_encoder
         self.tokenizer = tokenizer
         self.contexts = wiki_data.get_context()
 
     def get_dense_embedding(self):
         pickle_name = f"dense_embedding.bin"
-        emd_path = os.path.join(self.data_path, pickle_name)
+        # emd_path = os.path.join(self.data_path, pickle_name)
+        emd_path = self.pickle_path
 
         if os.path.isfile(emd_path):
             with open(emd_path, "rb") as file:
@@ -106,15 +107,15 @@ class RetrievalInference:
         return df
 
     def print_result(self, df, length):
-        for i in range(length):
-            print("=======================================")
-            f = df.iloc[i]
-            print(f'Question         : {f["question"]}')
-            print(f'original_context : {f["original_context"]}')
-            print("\n\n")
-            for i in range(len(f["context"])):
-                print(f'score\t:{f["scores"][i]},\ncontext\t: {f["context"][i]}\n')
-            print("=======================================")
+        # for i in range(length):
+        #     print("=======================================")
+        #     f = df.iloc[i]
+        #     print(f'Question         : {f["question"]}')
+        #     print(f'original_context : {f["original_context"]}')
+        #     print("\n\n")
+        #     for i in range(len(f["context"])):
+        #         print(f'score\t:{f["scores"][i]},\ncontext\t: {f["context"][i]}\n')
+        #     print("=======================================")
 
         print(
             "correct retrieval result by exhaustive search",
@@ -130,13 +131,16 @@ if __name__ == "__main__":
         "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
-        "--model_name_or_path",
-        default="klue/bert-base",
+        "--tokenizer_name",
+        default="bert-base-multilingual-cased",
         type=str,
         help="",
     )
     parser.add_argument(
-        "--data_path", default="../../data", type=str, help="dataset directory path"
+        "--pickle_path",
+        default="../../data/dense_embedding.bin",
+        type=str,
+        help="wiki embedding path",
     )
 
     parser.add_argument(
@@ -147,9 +151,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-    q_encoder = BertEncoder.from_pretrained("./encoder/q_encoder_epoch20").cuda()
-    wiki_data = WikiDataset(args.data_path, args.context_path, args.model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
+    q_encoder = BertEncoder.from_pretrained("./encoder/q_encoder_multi_10").cuda()
+    wiki_data = WikiDataset(args.pickle_path, args.context_path, args.tokenizer_name)
 
     org_dataset = load_from_disk(args.dataset_name)
     train_dataset = org_dataset["train"]
@@ -158,7 +162,8 @@ if __name__ == "__main__":
     retrieval = RetrievalInference(args, q_encoder, tokenizer, wiki_data)
     retrieval.get_dense_embedding()
 
-    df = retrieval.retrieval(validation_dataset, topk=5)
+    # df = retrieval.retrieval(validation_dataset, topk=5)
+    df = retrieval.retrieval(train_dataset, topk=50)
 
     df = retrieval.get_acc_score(df)
 

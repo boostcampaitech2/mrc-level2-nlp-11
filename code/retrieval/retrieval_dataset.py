@@ -13,10 +13,10 @@ from transformers import (
 
 
 class TrainRetrievalDataset(torch.utils.data.Dataset):
-    def __init__(self, model_name_or_path, dataset_name):
+    def __init__(self, tokenizer_name, dataset_name):
         org_dataset = load_from_disk(dataset_name)
         self.train_data = org_dataset["train"]
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     def __getitem__(self, idx):
         tokenizer = self.tokenizer
@@ -53,10 +53,10 @@ class TrainRetrievalDataset(torch.utils.data.Dataset):
 
 
 class ValRetrievalDataset(torch.utils.data.Dataset):
-    def __init__(self, model_name_or_path, dataset_name):
+    def __init__(self, tokenizer_name, dataset_name):
         org_dataset = load_from_disk(dataset_name)
         self.val_data = org_dataset["validation"]
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     def __getitem__(self, idx):
         tokenizer = self.tokenizer
@@ -93,10 +93,10 @@ class ValRetrievalDataset(torch.utils.data.Dataset):
 
 
 class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
-    def __init__(self, model_name_or_path, dataset_name, num_neg):
+    def __init__(self, tokenizer_name, dataset_name, num_neg):
         org_dataset = load_from_disk(dataset_name)
         self.train_data = org_dataset["train"]
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.num_neg = num_neg
         self.in_batch_negative()
 
@@ -168,9 +168,10 @@ class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
 
 
 class WikiDataset:
-    def __init__(self, data_path, context_path, model_name_or_path) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+    def __init__(self, context_path, tokenizer_name) -> None:
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        # with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+        with open(context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
         self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
@@ -184,3 +185,7 @@ class WikiDataset:
         return self.tokenizer(
             contexts, padding="max_length", truncation=True, return_tensors="pt"
         ).to("cuda")
+
+
+# self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
+# self.ids = list(range(len(self.contexts)))
