@@ -20,10 +20,7 @@ from tokenizers.models import WordPiece
 from utils_qa import *
 from trainer_qa import *
 
-from arguments import (
-    ModelArguments,
-    DataTrainingArguments,
-)
+from arguments import ModelArguments, DataTrainingArguments, TrainerArguments
 from mrc_reader import *
 import wandb
 
@@ -33,39 +30,31 @@ logger = logging.getLogger(__name__)
 def main():
     # 가능한 arguments 들은 ./arguments.py 나 transformer package 안의 src/transformers/training_args.py 에서 확인 가능합니다.
     # --help flag 를 실행시켜서 확인할 수 도 있습니다.
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments))
-    model_args, data_args = parser.parse_args_into_dataclasses()
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainerArguments))
+    model_args, data_args, trainer_args = parser.parse_args_into_dataclasses()
     training_args = TrainingArguments(
-        output_dir="test",
-        learning_rate=1e-5,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        num_train_epochs=5,
-        logging_dir=model_args.custom_logging_dir,
-        logging_steps=model_args.custom_logging_steps,
+        output_dir=trainer_args.output_dir,
+        learning_rate=trainer_args.lr,
+        per_device_train_batch_size=trainer_args.train_batch_size,
+        per_device_eval_batch_size=trainer_args.eval_batch_size,
+        num_train_epochs=trainer_args.epochs,
+        logging_steps=trainer_args.logging_steps,
         do_train=True,
         do_eval=True,
         save_strategy="steps",
         report_to="wandb",
-        run_name=model_args.custom_run_name,
-        save_steps=500,
+        run_name=trainer_args.run_name,
+        save_steps=trainer_args.save_steps,
         evaluation_strategy="steps",
-        eval_steps=500,
+        eval_steps=trainer_args.eval_steps,
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_exact_match",
     )
     print(model_args.model_name_or_path)
-    # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
-    # training_args.per_device_train_batch_size = 4
-    # print(training_args.per_device_train_batch_size)
 
     print(f"model is from {model_args.model_name_or_path}")
     print(f"data is from {data_args.dataset_name}")
 
-    # print("wandb connecting...")
-    # print("="*30)
-    # print(f"run_name : {model_args.wandb_run_name}")
-    # print("="*30)
-    # wandb.init(entity="ai_esg", name=model_args.wandb_run_name)
-    # wandb.config.update(model_args)
     # logging 설정
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -    %(message)s",
@@ -151,13 +140,15 @@ def run_mrc(
 
     # Training
     if training_args.do_train:
-        if last_checkpoint is not None:
-            checkpoint = last_checkpoint
-        elif os.path.isdir(model_args.model_name_or_path):
-            checkpoint = model_args.model_name_or_path
-        else:
-            checkpoint = None
-        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        # if last_checkpoint is not None:
+        #     checkpoint = last_checkpoint
+        # elif os.path.isdir(model_args.model_name_or_path):
+        #     checkpoint = model_args.model_name_or_path
+        # else:
+        #     checkpoint = None
+        # train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        train_result = trainer.train()
+
         trainer.save_model()  # Saves the tokenizer too for easy upload
 
         metrics = train_result.metrics

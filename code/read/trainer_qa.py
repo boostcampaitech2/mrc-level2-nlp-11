@@ -44,7 +44,7 @@ class QuestionAnsweringTrainer(Trainer):
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
         self.max_answer_length = max_answer_length
-        # self.metric = load_metric("squad")
+        self.metric = load_metric("squad")
         self.dataset = dataset
         self.answer_column_name = answer_column_name
 
@@ -84,7 +84,7 @@ class QuestionAnsweringTrainer(Trainer):
                 self.dataset,
                 self.answer_column_name,
             )
-            metrics = self.compute_metrics(eval_preds)
+            metrics = self.compute_metrics(self.metric, eval_preds)
 
             self.log(metrics)
         else:

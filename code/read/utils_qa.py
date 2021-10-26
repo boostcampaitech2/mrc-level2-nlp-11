@@ -44,16 +44,15 @@ from arguments import (
 
 
 logger = logging.getLogger(__name__)
-metric = load_metric("squad")
 
 
-def compute_metrics(p: EvalPrediction):
-    global metric
+def compute_metrics(metric, p: EvalPrediction):
     result = metric.compute(predictions=p.predictions, references=p.label_ids)
+
     """
     {"exact_match: socre, "f1 score": score}
     """
-    return result
+    return {"eval_exact_match": result["exact_match"], "eval_f1": result["f1"]}
     # return metric.compute(predictions=p.predictions, references=p.label_ids)
 
 
