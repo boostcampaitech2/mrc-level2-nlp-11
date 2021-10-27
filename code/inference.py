@@ -3,11 +3,11 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 
 대부분의 로직은 train.py 와 비슷하나 retrieval, predict 부분이 추가되어 있습니다.
 """
-
-
 import logging
 import sys
 from typing import Callable, List, Dict, NoReturn, Tuple
+
+sys.path.append("./retrieval")
 
 import numpy as np
 
@@ -33,7 +33,10 @@ from transformers import (
 
 from read.utils_qa import postprocess_qa_predictions, check_no_error
 from read.trainer_qa import QuestionAnsweringTrainer
-from retrieval.retrieval import SparseRetrieval
+from retrieval import SparseRetrieval
+from retrieval_model import BertEncoder
+from retrieval_inference import RetrievalInference
+from retrieval_dataset import WikiDataset
 
 from arguments import (
     ModelArguments,
@@ -93,18 +96,31 @@ def main():
         config=config,
     )
 
-    # True일 경우 : run passage retrieval
     if data_args.eval_retrieval:
-        datasets = run_sparse_retrieval(
-            tokenizer.tokenize,
-            datasets,
-            training_args,
-            data_args,
-        )
+        datasets = run_dense_retrieval_topk(data_args, datasets)
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
+
+
+def run_dense_retrieval_topk(args, datasets):
+
+    args.pickle_path = "../data/dense_embedding_20epoch.bin"
+
+    q_encoder = BertEncoder.from_pretrained("bert-base-multilingual-cased").cuda()
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
+    wiki_data = WikiDataset(
+        "../data/wikipedia_documents.json", "bert-base-multilingual-cased"
+    )
+
+    retriever = RetrievalInference(args, q_encoder, tokenizer, wiki_data)
+    retriever.get_dense_embedding()
+
+    df = retriever.retrieval(datasets["validation"], topk=5)
+
+    datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
+    return datasets
 
 
 def run_sparse_retrieval(
@@ -198,7 +214,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            #return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            # return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
@@ -316,4 +332,5 @@ def run_mrc(
 
 
 if __name__ == "__main__":
+
     main()
