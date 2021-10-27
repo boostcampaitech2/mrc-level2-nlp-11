@@ -285,6 +285,9 @@ if __name__ == "__main__":
         "--num_neg", default=3, type=int, help="number of negative samples for training"
     )
     parser.add_argument(
+        "--num_neg_sim", default=-1, type=int, help="number of random_neg_sample with similar docs"
+    )
+    parser.add_argument(
         "--random_seed", default=211, type=int, help="random seed for numpy and torch"
     )
 
@@ -314,7 +317,7 @@ if __name__ == "__main__":
 
     # TrainRetrievalDataset
     train_dataset = TrainRetrievalInBatchDataset(
-        args.model_name_or_path, args.dataset_name, args.num_neg
+        args.model_name_or_path, args.dataset_name, args.num_neg, args.num_neg_sim
     )
     validation_dataset = ValRetrievalDataset(args.model_name_or_path, args.dataset_name)
     retriever = DenseRetrieval(
@@ -322,7 +325,7 @@ if __name__ == "__main__":
         model_args,
         train_dataset,
         validation_dataset,
-        args.num_neg,
+        args.num_neg + max(0,args.num_neg_sim),
         p_encoder,
         q_encoder,
     )
