@@ -28,7 +28,6 @@ from transformers import (
 )
 
 
-
 class DenseRetrieval:
     def __init__(
         self,
@@ -200,14 +199,21 @@ class DenseRetrieval:
                     torch.cuda.empty_cache()
                     global_step += 1
                     del p_inputs, q_inputs
-                    if global_step % 100 == 0:  # args 추가 필요
+                    if global_step % args.log_step == 0:  # args 추가 필요
                         wandb.log({"loss": loss}, step=global_step)
 
                     # if global_step % 50 == 0:
                     #    self.eval(p_encoder, q_encoder, global_step)
 
-        p_encoder.save_pretrained(save_directory=args.save_path_p)  # args
-        q_encoder.save_pretrained(save_directory=args.save_path_q)  # args
+            if epoch % args.save_epoch == 0:
+                p_encoder.save_pretrained(
+                    save_directory=args.save_path_p + "_" + str(epoch)
+                )
+                q_encoder.save_pretrained(
+                    save_directory=args.save_path_q + "_" + str(epoch)
+                )
+        # p_encoder.save_pretrained(save_directory=args.save_path_p)  # args
+        # q_encoder.save_pretrained(save_directory=args.save_path_q)  # args
 
     def eval(self, p_encoder, q_encoder, global_step):
         val_dataset = self.val_dataset
@@ -251,17 +257,14 @@ if __name__ == "__main__":
         "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
-        "--model_name_or_path",
+        "--tokenizer_name",  #  tokenizer_name
         default="klue/bert-base",
         type=str,
         help="",
     )
     parser.add_argument(
-        "--data_path", default="../../data", type=str, help="dataset directory path"
-    )
-    parser.add_argument(
         "--context_path",
-        default="wikipedia_documents.json",
+        default="../../data/wikipedia_documents.json",
         type=str,
         help="context for retrieval",
     )
@@ -288,16 +291,44 @@ if __name__ == "__main__":
         "--num_neg", default=3, type=int, help="number of negative samples for training"
     )
     parser.add_argument(
-        "--num_neg_sim", default=-1, type=int, help="number of random_neg_sample with similar docs"
+        "--num_neg_sim",
+        default=-1,
+        type=int,
+        help="number of random_neg_sample with similar docs",
     )
     parser.add_argument(
         "--random_seed", default=211, type=int, help="random seed for numpy and torch"
     )
     parser.add_argument(
-        "--training_info",
-        default='difficult_sparse_docs.pkl',
+        "--p_enc_name_or_path",
+        default="bert-base-multilingual-cased",
         type=str,
-        help="file name for advanced training"
+        help="name or path for p_encoder",
+    )
+    parser.add_argument(
+        "--q_enc_name_or_path",
+        default="bert-base-multilingual-cased",
+        type=str,
+        help="name or path for q_encoder",
+    )
+    parser.add_argument(
+        "--save_pickle_path",
+        default="../../data/dense_embedding.bin",
+        type=str,
+        help="wiki embedding save path",
+    )
+    parser.add_argument(
+        "--save_epoch", default=10, type=int, help="save encoders per epoch"
+    )
+    parser.add_argument(
+        "--log_step", default=100, type=int, help="log loss to wandb per step"
+    )
+
+    parser.add_argument(
+        "--training_info",
+        default="../../data/difficult_sparse_docs.pkl",
+        type=str,
+        help="file name for advanced training",
     )
     args = parser.parse_args()
 
@@ -323,16 +354,13 @@ if __name__ == "__main__":
     wandb.init(entity="ai_esg", name=args.run_name)
     wandb.config.update(model_args)
 
-    # TrainRetrievalDataset
-   with open(os.path.join(args.data_path,args.context_path), "r", encoding="utf-8") as f:
-        wiki = json.load(f)
-    
-    if args.num_neg_sim < 0:
-        df_info = None
-    else:
-        df_info = pd.read_pickle(os.path.join(args.data_path,args.training_info))
     train_dataset = TrainRetrievalInBatchDataset(
-        args.model_name_or_path, args.dataset_name, args.num_neg, args.num_neg_sim, wiki, df_info
+        args.tokenizer_name,
+        args.dataset_name,
+        args.num_neg,
+        args.num_neg_sim,
+        args.context_path,
+        args.training_info,
     )
     validation_dataset = ValRetrievalDataset(args.tokenizer_name, args.dataset_name)
     retriever = DenseRetrieval(
@@ -340,10 +368,10 @@ if __name__ == "__main__":
         model_args,
         train_dataset,
         validation_dataset,
-        args.num_neg + max(0,args.num_neg_sim),
+        args.num_neg + max(0, args.num_neg_sim),
         p_encoder,
         q_encoder,
     )
 
-    #    retriever.train()
+    retriever.train()
     retriever.save_embedding()
