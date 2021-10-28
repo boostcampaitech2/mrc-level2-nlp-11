@@ -74,6 +74,7 @@ class DenseRetrieval:
         print("Embedding pickle saved.")
 
     def train(self):
+        args = self.args
         model_args = self.model_args
         p_encoder = self.p_encoder
         q_encoder = self.q_encoder
@@ -134,6 +135,7 @@ class DenseRetrieval:
         )
 
         global_step = 0
+        epoch = 0
         p_encoder.zero_grad()
         q_encoder.zero_grad()
         torch.cuda.empty_cache()
@@ -142,13 +144,12 @@ class DenseRetrieval:
         )
 
         for _ in tqdm(range(int(model_args.num_train_epochs)), desc="Epoch"):
-
             with tqdm(train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
                     p_encoder.train()
                     q_encoder.train()
 
-                    targets = batch[6].long()
+                    targets = torch.zeros(batch_size).long()
                     targets = targets.to(model_args.device)
                     p_inputs = {
                         "input_ids": batch[0]
@@ -198,15 +199,23 @@ class DenseRetrieval:
 
                     torch.cuda.empty_cache()
                     global_step += 1
+                    epoch += 1
                     del p_inputs, q_inputs
-                    if global_step % 100 == 0:  # args 추가 필요
+                    if global_step % args.log_step == 0:
                         wandb.log({"loss": loss}, step=global_step)
 
                     # if global_step % 50 == 0:
                     #    self.eval(p_encoder, q_encoder, global_step)
 
-        p_encoder.save_pretrained(save_directory=args.save_path_p)  # args
-        q_encoder.save_pretrained(save_directory=args.save_path_q)  # args
+            if epoch % args.save_epoch == 0:
+                p_encoder.save_pretrained(
+                    save_directory=args.save_path_p + "_" + str(epoch)
+                )
+                q_encoder.save_pretrained(
+                    save_directory=args.save_path_q + "_" + str(epoch)
+                )
+        # p_encoder.save_pretrained(save_directory=args.save_path_p)  # args
+        # q_encoder.save_pretrained(save_directory=args.save_path_q)  # args
 
     def eval(self, p_encoder, q_encoder, global_step):
         val_dataset = self.val_dataset
@@ -306,6 +315,12 @@ if __name__ == "__main__":
         type=str,
         help="wiki embedding save path",
     )
+    parser.add_argument(
+        "--save_epoch", default=10, type=int, help="save encoders per epoch"
+    )
+    parser.add_argument(
+        "--log_step", default=100, type=int, help="log loss to wandb per step"
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.random_seed)
@@ -332,7 +347,7 @@ if __name__ == "__main__":
 
     # TrainRetrievalDataset
     train_dataset = TrainRetrievalInBatchDataset(
-        args.tokenizer_name, args.dataset_name, args.num_neg
+        args.tokenizer_name, args.dataset_name, args.num_neg, args.context_path
     )
     validation_dataset = ValRetrievalDataset(args.tokenizer_name, args.dataset_name)
     retriever = DenseRetrieval(
@@ -345,5 +360,5 @@ if __name__ == "__main__":
         q_encoder,
     )
 
-    #    retriever.train()
+    retriever.train()
     retriever.save_embedding()
