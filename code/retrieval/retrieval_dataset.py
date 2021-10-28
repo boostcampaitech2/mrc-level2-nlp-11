@@ -13,10 +13,10 @@ from transformers import (
 
 
 class TrainRetrievalDataset(torch.utils.data.Dataset):
-    def __init__(self, model_name_or_path, dataset_name):
+    def __init__(self, tokenizer_name, dataset_name):
         org_dataset = load_from_disk(dataset_name)
         self.train_data = org_dataset["train"]
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     def __getitem__(self, idx):
         tokenizer = self.tokenizer
@@ -53,10 +53,10 @@ class TrainRetrievalDataset(torch.utils.data.Dataset):
 
 
 class ValRetrievalDataset(torch.utils.data.Dataset):
-    def __init__(self, model_name_or_path, dataset_name):
+    def __init__(self, tokenizer_name, dataset_name):
         org_dataset = load_from_disk(dataset_name)
         self.val_data = org_dataset["validation"]
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     def __getitem__(self, idx):
         tokenizer = self.tokenizer
@@ -93,41 +93,41 @@ class ValRetrievalDataset(torch.utils.data.Dataset):
 
 
 class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
-    def __init__(self, model_name_or_path, dataset_name, num_neg):
+    def __init__(self, tokenizer_name, dataset_name, num_neg, context_path):
         org_dataset = load_from_disk(dataset_name)
         self.train_data = org_dataset["train"]
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.num_neg = num_neg
+        self.corpus = WikiDataset(context_path, tokenizer_name).get_context()
         self.in_batch_negative()
 
     def in_batch_negative(self):
         train_data = self.train_data
         num_neg = self.num_neg
-        corpus = np.array(list([example for example in train_data["context"]]))
+        corpus = np.array(self.corpus)
         p_with_neg = []
-        p_idxs = []
 
         for c in train_data["context"]:
             while True:
                 neg_idxs = np.random.randint(len(corpus), size=num_neg)
-                p_idx = np.random.randint(num_neg + 1)
 
                 if not c in corpus[neg_idxs]:
                     p_neg = corpus[neg_idxs]
-                    p_with_neg.extend(list(np.insert(p_neg, p_idx, c)))
-                    p_idxs.append(p_idx)
+
+                    p_with_neg.append(c)
+                    p_with_neg.extend(p_neg)
 
                     break
         self.p_with_neg = p_with_neg
-        self.p_idxs = p_idxs
 
     def __getitem__(self, idx):
         tokenizer = self.tokenizer
         train_data = self.train_data
         question = train_data["question"][idx]
         num_neg = self.num_neg
-        p_with_neg = self.p_with_neg[idx * 4 : idx * 4 + 4]
-        p_idxs = self.p_idxs[idx]
+        p_with_neg = self.p_with_neg[
+            idx * (num_neg + 1) : idx * (num_neg + 1) + (num_neg + 1)
+        ]
 
         p_seqs = tokenizer(
             p_with_neg, padding="max_length", truncation=True, return_tensors="pt"
@@ -151,7 +151,6 @@ class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
         q_input_ids = q_seqs["input_ids"]
         q_attention_mask = q_seqs["attention_mask"]
         q_token_type_ids = q_seqs["token_type_ids"]
-        positive_ids = torch.tensor(p_idxs)
 
         return (
             p_input_ids,
@@ -160,7 +159,6 @@ class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
             q_input_ids,
             q_attention_mask,
             q_token_type_ids,
-            positive_ids,
         )
 
     def __len__(self):
@@ -168,9 +166,9 @@ class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
 
 
 class WikiDataset:
-    def __init__(self, data_path, context_path, model_name_or_path) -> None:
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+    def __init__(self, context_path, tokenizer_name) -> None:
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        with open(context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
         self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
