@@ -4,6 +4,7 @@ from tqdm import tqdm
 import time
 from subprocess import Popen, PIPE, STDOUT
 import os
+import pandas as pd
 
 class ElasticSearch:
     '''
@@ -31,7 +32,7 @@ class ElasticSearch:
             self.wiki_contexts = [{"id": val["document_id"], "title": val["title"], "context" : val["text"]} for key, val in wiki_json.items()]
 
     def set_elastic_server(self):
-        path_to_elastic = "elasticsearch-7.9.2/bin/elasticsearch"
+        path_to_elastic = "/opt/ml/mrc-level2-nlp-11/code/retrieval/elasticsearch-7.9.2/bin/elasticsearch"
         es_server = Popen([path_to_elastic],
                             stdout=PIPE, stderr=STDOUT,
                             preexec_fn=os.setuid(1)  # as daemon
@@ -104,8 +105,14 @@ class ElasticSearch:
                     }
                 }
         result = self.es.search(index=self.index_name, body=query, size=k)
-        return result["hits"]["hits"]
+        dataset = [{"question": question, 
+                    "title": doc["_source"]["title"],
+                    "context": doc["_source"]["context"],
+                    "score": doc["_score"]
+                    } for doc in result["hits"]["hits"]]
+        return dataset
 
 if __name__ == "__main__":
     retriever = ElasticSearch()
-    print(retriever.get_top_k_passages("미국의 수도는?", 5))
+    res = retriever.get_top_k_passages("미국의 수도는?", 5)
+    print(res)
