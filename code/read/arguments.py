@@ -119,3 +119,6 @@ class TrainerArguments:
     eval_steps: int = field(
         default=500, metadata={"help": "The nuber of steps for evaluation"}
     )
+    best_model_dir: str = field(
+        default="./best_model", metadata={"help": "The directory for best model"}
+    )
