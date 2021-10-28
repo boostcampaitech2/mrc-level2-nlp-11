@@ -1,4 +1,4 @@
-from elasticsearch import ElasticSearch
+from elasticsearch import Elasticsearch
 import json
 from tqdm import tqdm
 import time
@@ -8,8 +8,8 @@ import os
 class ElasticSearch:
     '''
     처음 실행하거나, Connection Error발생시
-    elastic_search 폴더와, tar.gz파일을 삭제후
-    elastic.sh 쉘스크립트 실행
+    elastic_search 폴더삭제(안해도 되는거 같아요.), 서버 껐다가
+    elastic.sh 쉘스크립트 실행이후 사용
     '''
     def __init__(self):
         self.config : dict= {'host':'localhost', 'port':9200}
@@ -20,9 +20,10 @@ class ElasticSearch:
         self.index_name = "wiki"
         self.es = self.set_elastic_server()
         if not self.es:
-            return
-        self.set_mapping()
-        self.insert_data_to_elastic()
+            exit()
+        is_already_exist = self.set_mapping()
+        if not is_already_exist:
+            self.insert_data_to_elastic()
 
     def get_wiki_parsed(self) -> None:
         with open(self.wiki_path, "r", encoding="utf-8") as f:
@@ -36,9 +37,10 @@ class ElasticSearch:
                             preexec_fn=os.setuid(1)  # as daemon
                             )
         config = {'host':'localhost', 'port':9200}
-        print("You have to wait 10secs for connecting to elastic server")
-        time.sleep(10)
-        es = Elasticsearch([config])
+        print("You have to wait 20secs for connecting to elastic server")
+        for _ in tqdm(range(20)):
+            time.sleep(1)
+        es = Elasticsearch([config], timeout=30)
         ping_result = es.ping()
         if ping_result:
             print("Connecting Success !!")
@@ -71,19 +73,25 @@ class ElasticSearch:
                     }
         return index_config
 
-    def set_mapping(self) -> None:
+    def set_mapping(self) -> bool:
         if self.es.indices.exists(index=self.index_name):
             print("Index Mapping already exists.")
+            return True
+            # self.es.indices.delete(index=self.index_name, ignore=[400, 404])
+            # print("Previous Index was dropped.")
+            # self.es.indices.create(index=self.index_name, body=self.index_config, ignore=400)
+            # print("Index Mapping Created.")
         else:
             self.es.indices.create(index=self.index_name, body=self.index_config, ignore=400)
             print("Index Mapping Created.")
+            return False
 
     def insert_data_to_elastic(self) -> None:
         for i, rec in enumerate(tqdm(self.wiki_contexts)):
             try:
-                index_status = self.es.index(index=INDEX_NAME, id=i, body=rec)
-            except:
-                print(f'Unable to load document {i}.')    
+                index_status = self.es.index(index=self.index_name, id=i, body=rec)
+            except Exception as e:
+                print(f'Unable to load document {i}. because of {e}')   
         n_records = self.es.count(index=self.index_name)['count']
         print(f'Succesfully loaded {n_records} into {self.index_name}')
     
@@ -96,4 +104,8 @@ class ElasticSearch:
                     }
                 }
         result = self.es.search(index=self.index_name, body=query, size=k)
-        #result["hits"]["hits"]
+        return result["hits"]["hits"]
+
+if __name__ == "__main__":
+    retriever = ElasticSearch()
+    print(retriever.get_top_k_passages("미국의 수도는?", 5))
