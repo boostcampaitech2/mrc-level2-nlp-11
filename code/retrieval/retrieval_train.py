@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from contextlib import contextmanager
 from typing import List, Tuple, NoReturn, Any, Optional, Union
-
+import json
 import torch
 import torch.nn.functional as F
 from retrieval_dataset import (
@@ -26,6 +26,7 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
+
 
 
 class DenseRetrieval:
@@ -239,7 +240,6 @@ class DenseRetrieval:
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="")
     parser.add_argument(
         "--save_path_q", default="./encoder/q_encoder", type=str, help=""
@@ -251,24 +251,26 @@ if __name__ == "__main__":
         "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
-        "--tokenizer_name",
-        default="bert-base-multilingual-cased",
+        "--model_name_or_path",
+        default="klue/bert-base",
         type=str,
         help="",
     )
-
+    parser.add_argument(
+        "--data_path", default="../../data", type=str, help="dataset directory path"
+    )
     parser.add_argument(
         "--context_path",
-        default="../../data/wikipedia_documents.json",
+        default="wikipedia_documents.json",
         type=str,
-        help="context path for retrieval",
+        help="context for retrieval",
     )
     parser.add_argument("--use_faiss", default=False, type=bool, help="")
     parser.add_argument(
         "--run_name", default="dense_retrieval", type=str, help="wandb run name"
     )
     parser.add_argument(
-        "--num_train_epochs", default=10, type=int, help="number of epochs for train"
+        "--num_train_epochs", default=1, type=int, help="number of epochs for train"
     )
     parser.add_argument(
         "--train_batch", default=2, type=int, help="batch size for train"
@@ -292,22 +294,10 @@ if __name__ == "__main__":
         "--random_seed", default=211, type=int, help="random seed for numpy and torch"
     )
     parser.add_argument(
-        "--p_enc_name_or_path",
-        default="bert-base-multilingual-cased",
+        "--training_info",
+        default='difficult_sparse_docs.pkl',
         type=str,
-        help="name or path for p_encoder",
-    )
-    parser.add_argument(
-        "--q_enc_name_or_path",
-        default="bert-base-multilingual-cased",
-        type=str,
-        help="name or path for q_encoder",
-    )
-    parser.add_argument(
-        "--save_pickle_path",
-        default="../../data/dense_embedding.bin",
-        type=str,
-        help="wiki embedding save path",
+        help="file name for advanced training"
     )
     args = parser.parse_args()
 
@@ -334,10 +324,15 @@ if __name__ == "__main__":
     wandb.config.update(model_args)
 
     # TrainRetrievalDataset
+   with open(os.path.join(args.data_path,args.context_path), "r", encoding="utf-8") as f:
+        wiki = json.load(f)
+    
+    if args.num_neg_sim < 0:
+        df_info = None
+    else:
+        df_info = pd.read_pickle(os.path.join(args.data_path,args.training_info))
     train_dataset = TrainRetrievalInBatchDataset(
-
-        args.model_name_or_path, args.dataset_name, args.num_neg, args.num_neg_sim
-
+        args.model_name_or_path, args.dataset_name, args.num_neg, args.num_neg_sim, wiki, df_info
     )
     validation_dataset = ValRetrievalDataset(args.tokenizer_name, args.dataset_name)
     retriever = DenseRetrieval(
