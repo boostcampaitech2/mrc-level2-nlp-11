@@ -44,32 +44,80 @@ class BM25Retrieval:
         # print(self.bm25v.get_scores(tokenized_query))
         # print(self.bm25v.get_top_n(tokenized_query, self.contexts, n=2))
 
-    def get_sparse_embedding(self) -> NoReturn:
-        # idf_name = f"idf.bin"
-        # doc_freqs_name = f"doc_freqs.bin"
-        # idf_path = os.path.join(self.data_path, idf_name)
-        # doc_freqs_path = os.path.join(self.data_path, doc_freqs_name)
+    def get_scores(self, query):
+        """
+        The ATIRE BM25 variant uses an idf function which uses a log(idf) score. To prevent negative idf scores,
+        this algorithm also adds a floor to the idf value of epsilon.
+        See [Trotman, A., X. Jia, M. Crane, Towards an Efficient and Effective Search Engine] for more info
+        :param query:
+        :return:
+        """
+        k1 = 1.2
+        b = 0.75
+        score = np.zeros(self.corpus_size)
+        doc_len = np.array(self.doc_len)
+        for q in query:
+            q_freq = np.array([(doc.get(q) or 0) for doc in self.doc_freqs])
+            score += (self.idf.get(q) or 0) * (
+                q_freq * (k1 + 1) / (q_freq + k1 * (1 - b + b * doc_len / self.avgdl))
+            )
+        return score
 
-        # if os.path.isfile(doc_freqs_path) and os.path.isfile(idf_path):
-        #     with open(doc_freqs_path, "rb") as file:
-        #         self.doc_freqs = pickle.load(file)
-        #     with open(idf_path, "rb") as file:
-        #         self.idf = pickle.load(file)
-        #     print("Embedding pickle load.")
-        # else:
-        print("Build passage embedding")
-        self.bm25 = BM25Okapi(self.contexts, tokenizer=self.tokenize_fn, k1=1.2, b=0.75)
-        self.doc_freqs = self.bm25.doc_freqs
-        self.idf = self.bm25.idf
-        # with open(doc_freqs_path, "wb") as file:
-        #     pickle.dump(self.doc_freqs, file)
-        # with open(idf_path, "wb") as file:
-        #     pickle.dump(self.idf, file)
-        # print("Embedding pickle saved.")
+    def get_sparse_embedding(self) -> NoReturn:
+        idf_name = f"idf.bin"
+        doc_freqs_name = f"doc_freqs.bin"
+        avgdl_name = f"avgdl.bin"
+        corpus_size_name = f"corpus_size.bin"
+        doc_len_name = f"doc_len.bin"
+        idf_path = os.path.join(self.data_path, idf_name)
+        doc_freqs_path = os.path.join(self.data_path, doc_freqs_name)
+        avgdl_path = os.path.join(self.data_path, avgdl_name)
+        corpus_size_path = os.path.join(self.data_path, corpus_size_name)
+        doc_len_path = os.path.join(self.data_path, doc_len_name)
+
+        if (
+            os.path.isfile(doc_freqs_path)
+            and os.path.isfile(idf_path)
+            and os.path.isfile(avgdl_path)
+            and os.path.isfile(corpus_size_path)
+            and os.path.isfile(doc_len_path)
+        ):
+            with open(doc_freqs_path, "rb") as file:
+                self.doc_freqs = pickle.load(file)
+            with open(idf_path, "rb") as file:
+                self.idf = pickle.load(file)
+            with open(avgdl_path, "rb") as file:
+                self.avgdl = pickle.load(file)
+            with open(corpus_size_path, "rb") as file:
+                self.corpus_size = pickle.load(file)
+            with open(doc_len_path, "rb") as file:
+                self.doc_len = pickle.load(file)
+            print("Embedding pickle load.")
+        else:
+            print("Build passage embedding")
+            self.bm25 = BM25Okapi(
+                self.contexts, tokenizer=self.tokenize_fn, k1=1.2, b=0.75
+            )
+            self.doc_freqs = self.bm25.doc_freqs
+            self.idf = self.bm25.idf
+            self.avgdl = self.bm25.avgdl
+            self.corpus_size = self.bm25.corpus_size
+            self.doc_len = self.bm25.doc_len
+            with open(doc_freqs_path, "wb") as file:
+                pickle.dump(self.doc_freqs, file)
+            with open(idf_path, "wb") as file:
+                pickle.dump(self.idf, file)
+            with open(avgdl_path, "wb") as file:
+                pickle.dump(self.avgdl, file)
+            with open(corpus_size_path, "wb") as file:
+                pickle.dump(self.corpus_size, file)
+            with open(doc_len_path, "wb") as file:
+                pickle.dump(self.doc_len, file)
+            print("Embedding pickle saved.")
 
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
 
-        result = self.bm25.get_scores(query)
+        result = self.get_scores(query)
         if not isinstance(result, np.ndarray):
             result = result.toarray()
         sorted_result = np.argsort(result.squeeze())[::-1]
@@ -194,19 +242,19 @@ if __name__ == "__main__":
     retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize)
     retriever.get_sparse_embedding()
     # retriever.retrieve(full_ds, topk=5)
-    # print(retriever.retrieve(org_dataset["train"]["question"][20], topk=5))
-    # print(org_dataset["train"]["context"][20])
+    print(retriever.retrieve(org_dataset["train"]["question"][20], topk=5))
+    print(org_dataset["train"]["context"][20])
     # for query in full_ds["question"]:
     #     print(retriever.retrieve(query, topk=5))
     #     break
     # print(type(retriever.contexts))
-    df = retriever.retrieve(org_dataset["train"][:10], topk=10)
+    # df = retriever.retrieve(org_dataset["train"][:10], topk=10)
+    # print(df)
+    # df["correct"] = df["original_context"] == df["context"]
+    # for i in range(100):
+    #     print(df.iloc[i])
 
-    df["correct"] = df["original_context"] == df["context"]
-    for i in range(100):
-        print(df.iloc[i])
-
-    print(
-        "correct retrieval result by exhaustive search",
-        df["correct"].sum() / len(df),  # acc
-    )
+    # print(
+    #     "correct retrieval result by exhaustive search",
+    #     df["correct"].sum() / len(df),  # acc
+    # )
