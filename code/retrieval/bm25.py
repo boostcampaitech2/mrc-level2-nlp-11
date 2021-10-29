@@ -93,7 +93,7 @@ class BM25Retrieval:
 
         result = [self.bm25.get_scores(query) for query in queries]
         if not isinstance(result, np.ndarray):
-            result = result.toarray()
+            result = np.array(result)
         doc_scores = []
         doc_indices = []
         for i in range(result.shape[0]):
@@ -105,26 +105,6 @@ class BM25Retrieval:
     def retrieve(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
     ) -> Union[Tuple[List, List], pd.DataFrame]:
-
-        """
-        Arguments:
-            query_or_dataset (Union[str, Dataset]):
-                str이나 Dataset으로 이루어진 Query를 받습니다.
-                str 형태인 하나의 query만 받으면 `get_relevant_doc`을 통해 유사도를 구합니다.
-                Dataset 형태는 query를 포함한 HF.Dataset을 받습니다.
-                이 경우 `get_relevant_doc_bulk`를 통해 유사도를 구합니다.
-            topk (Optional[int], optional): Defaults to 1.
-                상위 몇 개의 passage를 사용할 것인지 지정합니다.
-
-        Returns:
-            1개의 Query를 받는 경우  -> Tuple(List, List)
-            다수의 Query를 받는 경우 -> pd.DataFrame: [description]
-
-        Note:
-            다수의 Query를 받는 경우,
-                Ground Truth가 있는 Query (train/valid) -> 기존 Ground Truth Passage를 같이 반환합니다.
-                Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
-        """
 
         assert self.idf is not None
         if isinstance(query_or_dataset, str):
@@ -214,10 +194,19 @@ if __name__ == "__main__":
     retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize)
     retriever.get_sparse_embedding()
     # retriever.retrieve(full_ds, topk=5)
-    print(retriever.retrieve(org_dataset["train"]["question"][20], topk=5))
-    print(org_dataset["train"]["answers"][20])
-    print(org_dataset["train"]["context"][20])
+    # print(retriever.retrieve(org_dataset["train"]["question"][20], topk=5))
+    # print(org_dataset["train"]["context"][20])
     # for query in full_ds["question"]:
     #     print(retriever.retrieve(query, topk=5))
     #     break
     # print(type(retriever.contexts))
+    df = retriever.retrieve(org_dataset["train"][:10], topk=10)
+
+    df["correct"] = df["original_context"] == df["context"]
+    for i in range(100):
+        print(df.iloc[i])
+
+    print(
+        "correct retrieval result by exhaustive search",
+        df["correct"].sum() / len(df),  # acc
+    )
