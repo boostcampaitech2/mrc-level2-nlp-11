@@ -139,7 +139,7 @@ class BM25Retrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
 
-        result = [self.bm25.get_scores(query) for query in queries]
+        result = [self.get_scores(query) for query in queries]
         if not isinstance(result, np.ndarray):
             result = np.array(result)
         doc_scores = []
@@ -242,14 +242,14 @@ if __name__ == "__main__":
     retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize)
     retriever.get_sparse_embedding()
     # retriever.retrieve(full_ds, topk=5)
-    print(retriever.retrieve(org_dataset["train"]["question"][20], topk=5))
-    print(org_dataset["train"]["context"][20])
+    # print(retriever.retrieve(org_dataset["train"]["question"][25], topk=5))
+    # print(org_dataset["train"]["context"][25])
     # for query in full_ds["question"]:
     #     print(retriever.retrieve(query, topk=5))
     #     break
     # print(type(retriever.contexts))
-    # df = retriever.retrieve(org_dataset["train"][:10], topk=10)
-    # print(df)
+    df = retriever.retrieve(org_dataset["train"], topk=10)
+    print(df)
     # df["correct"] = df["original_context"] == df["context"]
     # for i in range(100):
     #     print(df.iloc[i])
