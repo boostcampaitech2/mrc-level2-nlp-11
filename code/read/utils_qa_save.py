@@ -127,13 +127,26 @@ def postprocess_qa_predictions(
     ), f"Got {len(predictions[0])} predictions and {len(features)} features."
 
     # example과 mapping되는 feature 생성
+    # examples -> raw데이터
+    # features -> tokenized_data
+    # k = 1 {mrc-1-001272:1, mrc-0-000944:2}
+    # k = 5 {mrc-1-001272:4, mrc-0-000944:9}
     example_id_to_index = {k: i for i, k in enumerate(examples["id"])}
-    features_per_example = collections.defaultdict(list)
+    features_per_example = collections.defaultdict(list) # {"mrc-1-000653": [0, 1, 2, 3, 4, 5, 6]}
     for i, feature in enumerate(features):
         features_per_example[example_id_to_index[feature["example_id"]]].append(i)
+    # features_per_example
+    # k=1 {1:[0, 1], 2:[2, 3]}
+    # k=5 {4:[0,1,2,3,4,5,6], 9:[7,8,9,10]}
+    # features -> raw-data를 쓰려고하는건데
 
     # prediction, nbest에 해당하는 OrderedDict 생성합니다.
     all_predictions = collections.OrderedDict()
+    all_scores = collections.OrderedDict()
+    for example in examples:
+        temp_id = example["id"].split("_")[0]
+        all_scores[temp_id] = 0
+        all_predictions[temp_id] = "empty"
     all_nbest_json = collections.OrderedDict()
     if version_2_with_negative:
         scores_diff_json = collections.OrderedDict()
@@ -143,12 +156,11 @@ def postprocess_qa_predictions(
     logger.info(
         f"Post-processing {len(examples)} example predictions split into {len(features)} features."
     )
-
+    
     # 전체 example들에 대한 main Loop
     for example_index, example in enumerate(tqdm(examples)):
         # 해당하는 현재 example index
         feature_indices = features_per_example[example_index]
-
         min_null_prediction = None
         prelim_predictions = []
 
@@ -241,26 +253,40 @@ def postprocess_qa_predictions(
             pred["text"] = context[offsets[0] : offsets[1]]
 
         # rare edge case에는 null이 아닌 예측이 하나도 없으며 failure를 피하기 위해 fake prediction을 만듭니다.
-        if len(predictions) == 0 or (
-            len(predictions) == 1 and predictions[0]["text"] == ""
-        ):
+        # if len(predictions) == 0 or (
+        #     len(predictions) == 1 and predictions[0]["text"] == ""
+        # ):
 
-            predictions.insert(
-                0, {"text": "empty", "start_logit": 0.0, "end_logit": 0.0, "score": 0.0}
-            )
+        #     predictions.insert(
+        #         0, {"text": "empty", "start_logit": 0.0, "end_logit": 0.0, "score": 0.0}
+        #     )
 
         # 모든 점수의 소프트맥스를 계산합니다(we do it with numpy to stay independent from torch/tf in this file, using the LogSumExp trick).
-        scores = np.array([pred.pop("score") for pred in predictions])
-        exp_scores = np.exp(scores - np.max(scores))
-        probs = exp_scores / exp_scores.sum()
+        if predictions:
+            scores = np.array([pred.pop("score") for pred in predictions])
+            # exp_scores = np.exp(scores - np.max(scores))
+            exp_scores = np.exp(scores)
+            probs = exp_scores / exp_scores.sum()
 
-        # 예측값에 확률을 포함합니다.
-        for prob, pred in zip(probs, predictions):
-            pred["probability"] = prob
+            # 예측값에 확률을 포함합니다.
+            for prob, pred in zip(probs, predictions):
+                pred["probability"] = prob
 
         # best prediction을 선택합니다.
         if not version_2_with_negative:
-            all_predictions[example["id"]] = predictions[0]["text"]
+            if predictions:
+                for pred in predictions:
+                    # print(f"example_id : {example['id']}, text: {all_predictions[example['id']]}, probs: {all_scores[example['id']]}")
+                    common_id = example["id"].split("_")[0]
+                    if pred["probability"] > all_scores[common_id]:
+                        if pred["text"] != "":
+                            all_predictions[common_id] = pred["text"]
+                            all_scores[common_id] = pred["probability"]
+                            # print(f"example_id : {example['id']}, text: {all_predictions[example['id']]}, probs: {all_scores[example['id']]}")
+                            break
+                    else:
+                        break
+
         else:
             # else case : 먼저 비어 있지 않은 최상의 예측을 찾아야 합니다
             i = 0
@@ -292,7 +318,6 @@ def postprocess_qa_predictions(
             }
             for pred in predictions
         ]
-
     # output_dir이 있으면 모든 dicts를 저장합니다.
     if output_dir is not None:
         assert os.path.isdir(output_dir), f"{output_dir} is not a directory."
