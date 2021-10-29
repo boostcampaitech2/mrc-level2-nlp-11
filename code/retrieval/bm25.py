@@ -214,8 +214,9 @@ if __name__ == "__main__":
     retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize)
     retriever.get_sparse_embedding()
     # retriever.retrieve(full_ds, topk=5)
-    print(retriever.retrieve(org_dataset["train"]["question"][2], topk=5))
-    print(retriever.retrieve(org_dataset["train"]["answers"][2]))
+    print(retriever.retrieve(org_dataset["train"]["question"][20], topk=5))
+    print(org_dataset["train"]["answers"][20])
+    print(org_dataset["train"]["context"][20])
     # for query in full_ds["question"]:
     #     print(retriever.retrieve(query, topk=5))
     #     break
