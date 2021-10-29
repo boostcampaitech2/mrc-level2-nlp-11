@@ -134,6 +134,7 @@ class DenseRetrieval:
         )
 
         global_step = 0
+        epoch = 0
         p_encoder.zero_grad()
         q_encoder.zero_grad()
         torch.cuda.empty_cache()
@@ -142,7 +143,6 @@ class DenseRetrieval:
         )
 
         for _ in tqdm(range(int(model_args.num_train_epochs)), desc="Epoch"):
-
             with tqdm(train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
                     p_encoder.train()
@@ -198,13 +198,14 @@ class DenseRetrieval:
 
                     torch.cuda.empty_cache()
                     global_step += 1
+
                     del p_inputs, q_inputs
                     if global_step % args.log_step == 0:  # args 추가 필요
                         wandb.log({"loss": loss}, step=global_step)
 
                     # if global_step % 50 == 0:
                     #    self.eval(p_encoder, q_encoder, global_step)
-
+            epoch += 1
             if epoch % args.save_epoch == 0:
                 p_encoder.save_pretrained(
                     save_directory=args.save_path_p + "_" + str(epoch)
