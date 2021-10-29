@@ -24,7 +24,7 @@ from datasets import (
 def timer(name):
     t0 = time.time()
     yield
-    #print(f"[{name}] done in {time.time() - t0:.3f} s")
+    # print(f"[{name}] done in {time.time() - t0:.3f} s")
 
 
 class SparseRetrieval:
@@ -64,7 +64,6 @@ class SparseRetrieval:
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
         print(f"Lengths of unique contexts : {len(self.contexts)}")
-        self.ids = list(range(len(self.contexts)))
 
         # Transform by vectorizer
         self.tfidfv = TfidfVectorizer(
@@ -329,6 +328,56 @@ class SparseRetrieval:
                     "context": " ".join(
                         [self.contexts[pid] for pid in doc_indices[idx]]
                     ),
+                }
+                if "context" in example.keys() and "answers" in example.keys():
+                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                    tmp["original_context"] = example["context"]
+                    tmp["answers"] = example["answers"]
+                total.append(tmp)
+
+            return pd.DataFrame(total)
+
+    def retrieve_faiss_topk(
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+    ) -> Union[Tuple[List, List], pd.DataFrame]:
+        # retrieve_faiss에서 scores, list 형태로 context 출력하게 변경
+
+        assert self.indexer is not None, "build_faiss()를 먼저 수행해주세요."
+
+        if isinstance(query_or_dataset, str):
+            doc_scores, doc_indices = self.get_relevant_doc_faiss(
+                query_or_dataset, k=topk
+            )
+            print("[Search query]\n", query_or_dataset, "\n")
+
+            for i in range(topk):
+                print("Top-%d passage with score %.4f" % (i + 1, doc_scores[i]))
+                print(self.contexts[doc_indices[i]])
+
+            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+
+        elif isinstance(query_or_dataset, Dataset):
+
+            # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
+            queries = query_or_dataset["question"]
+            total = []
+
+            with timer("query faiss search"):
+                doc_scores, doc_indices = self.get_relevant_doc_bulk_faiss(
+                    queries, k=topk
+                )
+            for idx, example in enumerate(
+                tqdm(query_or_dataset, desc="Sparse retrieval: ")
+            ):
+                tmp = {
+                    # Query와 해당 id를 반환합니다.
+                    "question": example["question"],
+                    "id": example["id"],
+                    # Retrieve한 Passage의 id, context를 반환합니다.
+                    "context_id": doc_indices[idx],
+                    # "title" : [self.titles[pid] for pid in doc_indices[idx]],
+                    "score": doc_scores[idx],
+                    "context": [self.contexts[pid] for pid in doc_indices[idx]],
                 }
                 if "context" in example.keys() and "answers" in example.keys():
                     # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.

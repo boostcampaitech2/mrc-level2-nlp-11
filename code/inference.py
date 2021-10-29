@@ -97,7 +97,18 @@ def main():
     )
 
     if data_args.eval_retrieval:
-        datasets = run_dense_retrieval_topk(data_args, datasets)
+        datasets = run_sparse_retrieval(
+            tokenizer.tokenize,
+            datasets,
+            training_args,
+            data_args,
+        )
+        # For sparse topk docs
+        # datasets = run_sparse_retrieval_topk(tokenizer.tokenize,
+        #                     datasets,
+        #                     training_args,
+        #                     data_args
+        #                     )
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
@@ -118,6 +129,33 @@ def run_dense_retrieval_topk(args, datasets):
     retriever.get_dense_embedding()
 
     df = retriever.retrieval(datasets["validation"], topk=5)
+
+    datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
+    return datasets
+
+
+def run_sparse_retrieval_topk(
+    tokenize_fn: Callable[[str], List[str]],
+    datasets: DatasetDict,
+    training_args: TrainingArguments,
+    data_args: DataTrainingArguments,
+    data_path: str = "../data",
+    context_path: str = "wikipedia_documents.json",
+) -> DatasetDict:
+
+    # Query에 맞는 Passage들을 Retrieval 합니다.
+    retriever = SparseRetrieval(
+        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+    )
+    retriever.get_sparse_embedding()
+
+    if data_args.use_faiss:
+        retriever.build_faiss(num_clusters=data_args.num_clusters)
+        df = retriever.retrieve_faiss_topk(
+            datasets["validation"], topk=data_args.top_k_retrieval
+        )
+    else:
+        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
 
     datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
     return datasets
