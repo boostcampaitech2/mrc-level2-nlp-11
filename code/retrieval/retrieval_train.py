@@ -16,6 +16,7 @@ from retrieval_dataset import (
     TrainRetrievalDataset,
     ValRetrievalDataset,
     TrainRetrievalInBatchDataset,
+    TrainRetrievalInBatchDatasetSparseTopk,
     WikiDataset,
 )
 from retrieval_model import BertEncoder
@@ -33,7 +34,7 @@ class DenseRetrieval:
         self,
         args,
         model_args,
-        train_dataset,
+        # train_dataset,
         val_dataset,
         num_neg,
         p_encoder,
@@ -41,7 +42,7 @@ class DenseRetrieval:
     ) -> None:
         self.args = args
         self.model_args = model_args
-        self.train_dataset = train_dataset
+        # self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.num_neg = num_neg
         self.p_encoder = p_encoder
@@ -78,7 +79,7 @@ class DenseRetrieval:
         p_encoder = self.p_encoder
         q_encoder = self.q_encoder
         num_neg = self.num_neg
-        train_dataset = self.train_dataset
+        # train_dataset = self.train_dataset
         batch_size = model_args.per_device_train_batch_size
 
         no_decay = ["bias", "LayerNorm.weight"]
@@ -123,7 +124,8 @@ class DenseRetrieval:
         )
         t_total = (
             ## train_dataloader
-            len(train_dataset)
+            # len(train_dataset) ######### should to change ########
+            3952
             // model_args.gradient_accumulation_steps
             * model_args.num_train_epochs
         )
@@ -138,17 +140,27 @@ class DenseRetrieval:
         p_encoder.zero_grad()
         q_encoder.zero_grad()
         torch.cuda.empty_cache()
-        train_dataloader = DataLoader(
-            train_dataset, shuffle=True, batch_size=batch_size
-        )
+        # train_dataloader = DataLoader(
+        #     train_dataset, shuffle=True, batch_size=batch_size
+        # )
 
         for _ in tqdm(range(int(model_args.num_train_epochs)), desc="Epoch"):
+            ## get negative samples with every epoch
+            train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
+                self.args.tokenizer_name,
+                self.args.dataset_name,
+                num_neg,
+                self.args.context_path,
+            )
+            train_dataloader = DataLoader(
+                train_dataset, shuffle=True, batch_size=batch_size
+            )
             with tqdm(train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
                     p_encoder.train()
                     q_encoder.train()
 
-                    targets = batch[6].long()
+                    targets = torch.zeros(batch_size).long()
                     targets = targets.to(model_args.device)
                     p_inputs = {
                         "input_ids": batch[0]
@@ -200,7 +212,7 @@ class DenseRetrieval:
                     global_step += 1
 
                     del p_inputs, q_inputs
-                    if global_step % args.log_step == 0:  # args 추가 필요
+                    if global_step % args.log_step == 0:
                         wandb.log({"loss": loss}, step=global_step)
 
                     # if global_step % 50 == 0:
@@ -213,8 +225,6 @@ class DenseRetrieval:
                 q_encoder.save_pretrained(
                     save_directory=args.save_path_q + "_" + str(epoch)
                 )
-        # p_encoder.save_pretrained(save_directory=args.save_path_p)  # args
-        # q_encoder.save_pretrained(save_directory=args.save_path_q)  # args
 
     def eval(self, p_encoder, q_encoder, global_step):
         val_dataset = self.val_dataset
@@ -292,12 +302,6 @@ if __name__ == "__main__":
         "--num_neg", default=3, type=int, help="number of negative samples for training"
     )
     parser.add_argument(
-        "--num_neg_sim",
-        default=-1,
-        type=int,
-        help="number of random_neg_sample with similar docs",
-    )
-    parser.add_argument(
         "--random_seed", default=211, type=int, help="random seed for numpy and torch"
     )
     parser.add_argument(
@@ -324,13 +328,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log_step", default=100, type=int, help="log loss to wandb per step"
     )
-
-    parser.add_argument(
-        "--training_info",
-        default="../../data/difficult_sparse_docs.pkl",
-        type=str,
-        help="file name for advanced training",
-    )
     args = parser.parse_args()
 
     torch.manual_seed(args.random_seed)
@@ -355,24 +352,31 @@ if __name__ == "__main__":
     wandb.init(entity="ai_esg", name=args.run_name)
     wandb.config.update(model_args)
 
-    train_dataset = TrainRetrievalInBatchDataset(
-        args.tokenizer_name,
-        args.dataset_name,
-        args.num_neg,
-        args.num_neg_sim,
-        args.context_path,
-        args.training_info,
-    )
+    # train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
+    #     args.tokenizer_name,
+    #     args.dataset_name,
+    #     args.num_neg,
+    #     args.context_path,
+    # )
+
     validation_dataset = ValRetrievalDataset(args.tokenizer_name, args.dataset_name)
+    # retriever = DenseRetrieval(
+    #     args,
+    #     model_args,
+    #     train_dataset,
+    #     validation_dataset,
+    #     args.num_neg,
+    #     p_encoder,
+    #     q_encoder,
+    # )
     retriever = DenseRetrieval(
         args,
         model_args,
-        train_dataset,
+        # train_dataset,
         validation_dataset,
-        args.num_neg + max(0, args.num_neg_sim),
+        args.num_neg,
         p_encoder,
         q_encoder,
     )
-
     retriever.train()
-    retriever.save_embedding()
+    # retriever.save_embedding()
