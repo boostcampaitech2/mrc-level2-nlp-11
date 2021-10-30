@@ -178,6 +178,7 @@ class TrainRetrievalInBatchDatasetSparseTopk(torch.utils.data.Dataset):
     ):
         dataset = load_from_disk(dataset_name)
         self.train_data = dataset["train"]
+        # self.train_data = dataset["validation"]
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.num_neg = num_neg
 
@@ -253,52 +254,42 @@ class TrainRetrievalInBatchDatasetSparseTopk(torch.utils.data.Dataset):
 
 
 class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
-    def __init__(
-        self,
-        tokenizer_name,
-        dataset_name,
-        num_neg,
-        num_neg_sim,
-        context_path,
-        training_info,
-    ):
+    def __init__(self, tokenizer_name, dataset_name, num_neg, context_path):
         org_dataset = load_from_disk(dataset_name)
         self.train_data = org_dataset["train"]
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.num_neg = num_neg
-        self.num_neg_sim = num_neg_sim
-        with open(context_path, "r", encoding="utf-8") as f:
-            self.wiki = json.load(f)
-        if num_neg_sim < 0:
-            self.df_info = None
-        else:
-            self.df_info = pd.read_pickle(training_info)
+        self.corpus = WikiDataset(context_path, tokenizer_name).get_context()
+        print("in batch negative sampling from wiki")
+        self.in_batch_negative()
+
+    def in_batch_negative(self):
+        train_data = self.train_data
+        num_neg = self.num_neg
+        corpus = np.array(self.corpus)
+        p_with_neg = []
+
+        for c in train_data["context"]:
+            while True:
+                neg_idxs = np.random.randint(len(corpus), size=num_neg)
+
+                if not c in corpus[neg_idxs]:
+                    p_neg = corpus[neg_idxs]
+
+                    p_with_neg.append(c)
+                    p_with_neg.extend(p_neg)
+
+                    break
+        self.p_with_neg = p_with_neg
 
     def __getitem__(self, idx):
         tokenizer = self.tokenizer
         train_data = self.train_data
         question = train_data["question"][idx]
-        num_neg = self.num_neg + max(0, self.num_neg_sim)
-        wiki = self.wiki
-        df_info = self.df_info
-        ans_id = np.array([train_data["document_id"][idx]])
-        doc_id = np.random.randint(len(wiki), size=self.num_neg)
-        doc_id = np.concatenate((ans_id, doc_id), axis=0)
-        while self.num_neg_sim > 0:
-            neg_sim_idxs = np.random.randint(
-                len(df_info["docs_id"][idx]), size=self.num_neg_sim
-            )
-            check = False
-            for neg_sim_id in neg_sim_idxs:
-                if neg_sim_id in doc_id:
-                    check = True
-                    break
-            if check == False:
-                doc_id = np.concatenate((doc_id, neg_sim_idxs), axis=0)
-                break
-
-        p_with_neg = [wiki[str(sample_idx)]["text"] for sample_idx in doc_id]
-        p_idxs = 0
+        num_neg = self.num_neg
+        p_with_neg = self.p_with_neg[
+            idx * (num_neg + 1) : idx * (num_neg + 1) + (num_neg + 1)
+        ]
 
         p_seqs = tokenizer(
             p_with_neg, padding="max_length", truncation=True, return_tensors="pt"
@@ -322,7 +313,6 @@ class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
         q_input_ids = q_seqs["input_ids"]
         q_attention_mask = q_seqs["attention_mask"]
         q_token_type_ids = q_seqs["token_type_ids"]
-        positive_ids = torch.tensor(p_idxs)
 
         return (
             p_input_ids,
@@ -331,7 +321,6 @@ class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
             q_input_ids,
             q_attention_mask,
             q_token_type_ids,
-            positive_ids,
         )
 
     def __len__(self):

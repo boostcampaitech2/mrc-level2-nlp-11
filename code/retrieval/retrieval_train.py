@@ -126,6 +126,7 @@ class DenseRetrieval:
             ## train_dataloader
             # len(train_dataset) ######### should to change ########
             3952
+            # 240
             // model_args.gradient_accumulation_steps
             * model_args.num_train_epochs
         )
@@ -146,7 +147,8 @@ class DenseRetrieval:
 
         for _ in tqdm(range(int(model_args.num_train_epochs)), desc="Epoch"):
             ## get negative samples with every epoch
-            train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
+            # train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
+            train_dataset = TrainRetrievalInBatchDataset(
                 self.args.tokenizer_name,
                 self.args.dataset_name,
                 num_neg,
@@ -379,4 +381,4 @@ if __name__ == "__main__":
         q_encoder,
     )
     retriever.train()
-    # retriever.save_embedding()
+    retriever.save_embedding()
