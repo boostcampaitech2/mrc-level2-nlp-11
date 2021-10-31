@@ -1,11 +1,15 @@
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, helpers
 import json
 from tqdm import tqdm
 import time
 from subprocess import Popen, PIPE, STDOUT
-import os
+import re
 import pandas as pd
 from datasets import Dataset, DatasetDict, Value, Features, load_from_disk
+import sys,os
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+
+from read.utils_qa import *
 
 class ElasticSearch:
     '''
@@ -18,9 +22,8 @@ class ElasticSearch:
         self.wiki_path : str= "/opt/ml/mrc-level2-nlp-11/data/wikipedia_documents.json"
         self.wiki_contexts : list = None
         self.get_wiki_parsed()
-        self.index_config : dict = self.get_index_config()
-        print(self.index_config)
-        self.index_name = "wiki_4"
+        
+        self.index_name = "wiki"
         self.es = self.set_elastic_server()
         if not self.es:
             exit()
@@ -31,8 +34,14 @@ class ElasticSearch:
     def get_wiki_parsed(self) -> None:
         with open(self.wiki_path, "r", encoding="utf-8") as f:
             wiki_json = json.load(f)
-            self.wiki_contexts = [{"id": val["document_id"], "title": val["title"], "context" : val["text"]} for key, val in wiki_json.items()]
+            
+            wiki_contexts = list(dict.fromkeys([v['text'] for v in wiki_json.values()]))
+            self.wiki_contexts = [{"document_text" : wiki_contexts[i]} for i in range(len(wiki_contexts))]
+            #self.wiki_contexts = [{"id": val["document_id"], "title": val["title"], "context" : preprocess(val["text"])} for key, val in wiki_json.items()]
+            #self.wiki_contexts = [{"title": val["title"], "document_text" : val["text"]} for key, val in wiki_json.items()]
 
+    
+    
     def set_elastic_server(self):
         path_to_elastic = "/opt/ml/mrc-level2-nlp-11/code/retrieval/elasticsearch-7.9.2/bin/elasticsearch"
         es_server = Popen([path_to_elastic],
@@ -51,114 +60,6 @@ class ElasticSearch:
         else:
             print("Connecting Failed.. You have to try again. You have to follow class description")
             return None
-    
-    def get_index_config(self) -> str:
-        index_config_1 = {
-                    "settings": {
-                        "analysis": {
-                            "analyzer": {
-                                "nori_analyzer": {
-                                    "type": "custom",
-                                    "tokenizer": "nori_tokenizer",
-                                    "decompound_mode": "mixed",
-                                }
-                            }
-                        }
-                    },
-                    "mappings": {
-                        "dynamic": "strict", 
-                        "properties": {
-                            "id": {"type": "int"},
-                            "title": {"type": "text", "analyzer":"nori_analyzer"},
-                            "context": {"type": "text", "analyzer":"nori_analyzer"},
-                            }
-                        }
-                    }
-        index_config_2 = {
-                'settings':{
-                    'analysis':{
-                        'analyzer':{
-                          'my_analyzer':{
-                              "type": "custom",
-                              'tokenizer':'nori_tokenizer',
-                              'decompound_mode':'mixed',
-                              'stopwords':'_korean_',
-                              'synonyms':'_korean_',
-                              "filter": ["lowercase",
-                                         "my_shingle_f",
-                                         "nori_readingform",
-                                         "nori_number",
-                                         "cjk_bigram",
-                                         "decimal_digit",
-                                         "stemmer",
-                                         "trim"]
-                          }
-                      },
-                      'filter':{
-                          'my_shingle_f':{
-                              "type": "shingle"
-                          }
-                      }
-                  },
-                  'similarity':{
-                      'my_similarity':{
-                          'type':'BM25',
-                      }
-                  }
-              },
-            'mappings':{
-                  'properties':{
-                      'title':{
-                          'type':'text',
-                          'analyzer':'my_analyzer',
-                          'similarity':'my_similarity'
-                      },
-                      'context':{
-                          'type':'text',
-                          'analyzer':'my_analyzer',
-                          'similarity':'my_similarity'
-                      },
-                        "id": {"type": "int"},
-                  }
-              }
-        }
-
-        index_config_3 = {
-        "settings": {
-            "analysis": {
-                "filter":{
-                    "my_stop_filter": {
-                        "type" : "stop",
-                        "stopwords_path" : "my_stop_dic.txt"
-                    }
-                },
-                "analyzer": {
-                    "nori_analyzer": {
-                        "type": "custom",
-                        "tokenizer": "nori_tokenizer",
-                        "decompound_mode": "mixed",
-                        "filter" : ["my_stop_filter"]
-                    }
-                }
-            }
-        },
-        "mappings": {
-            "dynamic": "strict", 
-            "properties": {
-                    'title':{
-                          'type':'text',
-                          'analyzer':'nori_analyzer',
-                    },
-                    'context':{
-                        'type':'text',
-                        'analyzer':'nori_analyzer',
-                    },
-                      "id": {"type": "int"},
-                }
-            }
-        }
-
-        return index_config_3
 
     def set_mapping(self) -> bool:
         if self.es.indices.exists(index=self.index_name):
@@ -169,8 +70,35 @@ class ElasticSearch:
             # self.es.indices.create(index=self.index_name, body=self.index_config, ignore=400)
             # print("Index Mapping Created.")
         else:
-            self.es.indices.create(index=self.index_name, body=self.index_config, ignore=400)
-            print("Index Mapping Created.")
+            index_config = {
+            "settings": {
+                "analysis": {
+                    "filter":{
+                        "my_stop_filter": {
+                            "type" : "stop",
+                            "stopwords_path" : "my_stop_dic.txt"
+                        }
+                    },
+                    "analyzer": {
+                        "nori_analyzer": {
+                            "type": "custom",
+                            "tokenizer": "nori_tokenizer",
+                            "decompound_mode": "mixed",
+                            "filter" : ["my_stop_filter"]
+                        }
+                    }
+                }
+            },
+            "mappings": {
+                "dynamic": "strict", 
+                "properties": {
+                    "document_text": {"type": "text", "analyzer": "nori_analyzer"},
+                    "title": {"type": "text", "analyzer": "nori_analyzer"}
+                    },
+                }
+            }
+
+            print(self.es.indices.create(index=self.index_name, body=index_config, ignore=400))
             return False
 
     def insert_data_to_elastic(self) -> None:
@@ -182,27 +110,11 @@ class ElasticSearch:
         n_records = self.es.count(index=self.index_name)['count']
         print(f'Succesfully loaded {n_records} into {self.index_name}')
     
-    # def get_top_k_passages(self, question:str, k:int) -> list:
-    #     query = {
-    #             'query': {
-    #                     'match': {
-    #                         'context': question
-    #                      }
-    #                 }
-    #             }
-    #     result = self.es.search(index=self.index_name, body=query, size=k)
-    #     dataset = [{"question": question, 
-    #                 "title": doc["_source"]["title"],
-    #                 "context": doc["_source"]["context"],
-    #                 "score": doc["_score"]
-    #                 } for doc in result["hits"]["hits"]]
-    #     return dataset
-
     def get_top_k_passages(self, question:str, k:int) -> list:
         query = {
                 'query': {
                         'match': {
-                            'context': question
+                            'document_text': question
                          }
                     }
                 }
@@ -218,8 +130,8 @@ class ElasticSearch:
             # examples = [{"context": passages[i]["_source"]["context"], "id": question_id+f"_{i}", "question": question, "score":passages[i]["_score"]} for i in range(len(passages))]
             context = ""
             for passage in passages:
-                context += passage["_source"]["context"] + " "
-            example = {"context": context, "id":question_id, "question":question, "score":0} 
+                context += passage["_source"]["document_text"] + " "
+            example = {"context": context, "id":question_id, "question":question} 
             # results.extend(examples)
             results.append(example)
         f = Features(
@@ -227,12 +139,12 @@ class ElasticSearch:
                 "context": Value(dtype="string", id=None),
                 "id": Value(dtype="string", id=None),
                 "question": Value(dtype="string", id=None),
-                "score": Value(dtype="float", id=None)
             }
         )
         df = pd.DataFrame(results)
         
         return DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+
 
 if __name__ == "__main__":
     retriever = ElasticSearch()
@@ -240,13 +152,14 @@ if __name__ == "__main__":
     data = load_from_disk(train_path)
     train_data = data["train"]
     match_cnt = 0
-    k = 5
+    k = 10
     for datum in tqdm(train_data):
         question_text = datum["question"]
         context = datum["context"]
         result = retriever.get_top_k_passages(question_text, k)
         for res in result:
-            if res["_source"]["context"] == context:
+            if res["_source"]["document_text"] == context:
                 match_cnt += 1
                 break
     print(f"matching score is {match_cnt/3952:.3f}")
+    

@@ -101,7 +101,8 @@ def main():
         #     training_args,
         #     data_args,
         # )
-        datasets = es.run_retrieval(datasets["validation"], 10)
+        k = 5
+        datasets = es.run_retrieval(datasets["validation"], k)
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
