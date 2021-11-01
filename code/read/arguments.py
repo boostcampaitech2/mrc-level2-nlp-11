@@ -90,6 +90,9 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
+    use_preprocess: bool = field(
+        default=True, metadata={"help": "apply preprocessing traindataset"}
+    )
 
 
 @dataclass
