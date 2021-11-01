@@ -6,6 +6,7 @@ import pickle
 from tqdm.auto import tqdm
 import pandas as pd
 import argparse
+from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List, Tuple, NoReturn, Any, Optional, Union
 from rank_bm25 import BM25Okapi
 from retrieval_dataset import (
@@ -29,85 +30,135 @@ class BM25Retrieval:
         data_path: Optional[str] = "../../../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
     ):
-        self.data_path = data_path
-        self.tokenize_fn = tokenize_fn
+
+        save_dir = os.path.join(data_path, "bm25")
+        if not os.path.exists(save_dir):
+            os.mkdir(save_dir)
+
+        self.embed_path = os.path.join(save_dir, "embedding.bin")
+        self.encoder_path = os.path.join(save_dir, "encoder.bin")
+        self.idf_encoder_path = os.path.join(save_dir, "idf_encoder.bin")
+
+        self.tokenizer = tokenize_fn
+        self.idf_path = os.path.join(save_dir, "idf.bin")
+
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
-        self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
-        # self.contexts = [wiki[str(i)]["text"] for i in range(len(wiki))]
-        print(f"Lengths of unique contexts : {len(self.contexts)}")
+        # self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
+        # BM25 단독으로 사용하시는 경우, title을 추가해주시면 성능이 더 올라갑니다.
+        self.contexts = list(
+            dict.fromkeys([v["title"] + ": " + v["text"] for v in wiki.values()])
+        )
+
         self.ids = list(range(len(self.contexts)))
 
-    def get_scores(self, query):
-        """
-        The ATIRE BM25 variant uses an idf function which uses a log(idf) score. To prevent negative idf scores,
-        this algorithm also adds a floor to the idf value of epsilon.
-        See [Trotman, A., X. Jia, M. Crane, Towards an Efficient and Effective Search Engine] for more info
-        :param query:
-        :return:
-        """
-        k1 = 1.2
-        b = 0.75
-        score = np.zeros(self.corpus_size)
-        doc_len = np.array(self.doc_len)
-        for q in query:
-            q_freq = np.array([(doc.get(q) or 0) for doc in self.doc_freqs])
-            score += (self.idf.get(q) or 0) * (
-                q_freq * (k1 + 1) / (q_freq + k1 * (1 - b + b * doc_len / self.avgdl))
-            )
-        return score
+        self.b = 0.75
+        self.k1 = 1.2
+        self.encoder = TfidfVectorizer(
+            tokenizer=self.tokenizer, ngram_range=(1, 2), use_idf=False, norm=None
+        )
+        self.idf_encoder = TfidfVectorizer(
+            tokenizer=self.tokenizer, ngram_range=(1, 2), norm=None, smooth_idf=False
+        )
+        self.dls = np.zeros(len(self.contexts))
+
+        for idx, context in enumerate(self.contexts):
+            self.dls[idx] = len(context)
+
+        self.avdl = np.mean(self.dls)
+        self.p_embedding = None
+        self.idf = None
+
+    def get_scores(self, p_embedding, query_vec):
+        b, k1, avdl, = (
+            self.b,
+            self.k1,
+            self.avdl,
+        )
+        len_p = self.dls
+
+        # score = np.zeros(self.corpus_size)
+        # doc_len = np.array(len_p)
+        p_emb_for_q = p_embedding[:, query_vec.indices]
+        print("-----test point 1-----")
+        denom = p_emb_for_q + (k1 * (1 - b + b * len_p / avdl))[:, None]
+        print("-----test point 2-----")
+        idf_broadcasted = np.broadcast_to(self.idf, p_emb_for_q.shape)
+        print("-----test point 3-----")
+        numer = p_emb_for_q * (k1 + 1)
+        # print(type(denom))
+        # print(type(numer))
+        # print(numer.size(), denom.size(), idf_broadcasted.size())
+        # print(type(np.multiply((numer / denom), idf_broadcasted)))
+        print("----start multiply----")
+        result = (np.multiply((numer / denom), idf_broadcasted)).sum(1).A1
+        print("----- end of multiply -----")
+
+        if not isinstance(result, np.ndarray):
+            result = result.toarray()
+
+        return result
+        # q_freq = p_embedding[:, query_vec.indices]
+        # idf_broadcasted = np.broadcast_to(self.idf, q_freq.shape)
+        # print(self.idf)
+        # print(q_freq.shape)
+        # print(idf_broadcasted.shape)
+
+        # score = (
+        #     q_freq * (k1 + 1) / (q_freq + k1 * (1 - b + b * len_p / self.avdl))
+        # ) * idf_broadcasted
+        # return score
+
+    def _exec_embedding(self):
+        self.p_embedding = self.encoder.fit_transform(
+            tqdm(self.contexts, desc="TF calculation: ")
+        )
+        self.idf_encoder.fit(tqdm(self.contexts, desc="IDF calculation: "))
+        print("-----transform idf-----")
+        self.idf = self.idf_encoder.transform(self.contexts)
+        print("-----Done-----")
+
+        return self.p_embedding, self.encoder, self.idf, self.idf_encoder
 
     def get_sparse_embedding(self) -> NoReturn:
-        idf_name = f"idf.bin"
-        doc_freqs_name = f"doc_freqs.bin"
-        avgdl_name = f"avgdl.bin"
-        corpus_size_name = f"corpus_size.bin"
-        doc_len_name = f"doc_len.bin"
-        idf_path = os.path.join(self.data_path, idf_name)
-        doc_freqs_path = os.path.join(self.data_path, doc_freqs_name)
-        avgdl_path = os.path.join(self.data_path, avgdl_name)
-        corpus_size_path = os.path.join(self.data_path, corpus_size_name)
-        doc_len_path = os.path.join(self.data_path, doc_len_name)
-
         if (
-            os.path.isfile(doc_freqs_path)
-            and os.path.isfile(idf_path)
-            and os.path.isfile(avgdl_path)
-            and os.path.isfile(corpus_size_path)
-            and os.path.isfile(doc_len_path)
+            os.path.isfile(self.embed_path)
+            and os.path.isfile(self.encoder_path)
+            and os.path.isfile(self.idf_encoder_path)
+            and os.path.isfile(self.idf_path)
+            and False
+            # and not self.args.retriever.retrain
         ):
-            with open(doc_freqs_path, "rb") as file:
-                self.doc_freqs = pickle.load(file)
-            with open(idf_path, "rb") as file:
-                self.idf = pickle.load(file)
-            with open(avgdl_path, "rb") as file:
-                self.avgdl = pickle.load(file)
-            with open(corpus_size_path, "rb") as file:
-                self.corpus_size = pickle.load(file)
-            with open(doc_len_path, "rb") as file:
-                self.doc_len = pickle.load(file)
-            print("Embedding pickle load.")
+            with open(self.embed_path, "rb") as f:
+                self.p_embedding = pickle.load(f)
+
+            with open(self.encoder_path, "rb") as f:
+                self.encoder = pickle.load(f)
+
+            with open(self.idf_encoder_path, "rb") as f:
+                self.idf_encoder = pickle.load(f)
+
+            with open(self.idf_path, "rb") as f:
+                self.idf = pickle.load(f)
         else:
-            print("Build passage embedding")
-            self.bm25 = BM25Okapi(
-                self.contexts, tokenizer=self.tokenize_fn, k1=1.2, b=0.75
-            )
-            self.doc_freqs = self.bm25.doc_freqs
-            self.idf = self.bm25.idf
-            self.avgdl = self.bm25.avgdl
-            self.corpus_size = self.bm25.corpus_size
-            self.doc_len = self.bm25.doc_len
-            with open(doc_freqs_path, "wb") as file:
-                pickle.dump(self.doc_freqs, file)
-            with open(idf_path, "wb") as file:
-                pickle.dump(self.idf, file)
-            with open(avgdl_path, "wb") as file:
-                pickle.dump(self.avgdl, file)
-            with open(corpus_size_path, "wb") as file:
-                pickle.dump(self.corpus_size, file)
-            with open(doc_len_path, "wb") as file:
-                pickle.dump(self.doc_len, file)
-            print("Embedding pickle saved.")
+            (
+                self.p_embedding,
+                self.encoder,
+                self.idf,
+                self.idf_encoder,
+            ) = self._exec_embedding()
+
+            with open(self.embed_path, "wb") as f:
+                pickle.dump(self.p_embedding, f)
+
+            with open(self.encoder_path, "wb") as f:
+                pickle.dump(self.encoder, f)
+
+            with open(self.idf_path, "wb") as f:
+                pickle.dump(self.idf, f)
+
+            with open(self.idf_encoder_path, "wb") as f:
+                pickle.dump(self.idf_encoder, f)
 
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
 
@@ -120,30 +171,32 @@ class BM25Retrieval:
         return doc_score, doc_indices
 
     def get_relevant_doc_bulk(
-        self, queries: List, k: Optional[int] = 1
+        self, queries: List, topk: Optional[int] = 5
     ) -> Tuple[List, List]:
 
-        """
-        Arguments:
-            queries (List):
-                하나의 Query를 받습니다.
-            k (Optional[int]): 1
-                상위 몇 개의 Passage를 반환할지 정합니다.
-        Note:
-            vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
-        """
+        query_vecs = self.encoder.transform(queries)
 
-        result = [self.get_scores(query) for query in queries]
-        print(result)
-        if not isinstance(result, np.ndarray):
-            result = np.array(result)
         doc_scores = []
         doc_indices = []
-        for i in range(result.shape[0]):
-            sorted_result = np.argsort(result[i, :])[::-1]
-            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
-            doc_indices.append(sorted_result.tolist()[:k])
-            print(doc_scores[-1], doc_indices[-1])
+
+        p_embedding = self.p_embedding.tocsc()
+
+        self.results = []
+
+        for query_vec in tqdm(query_vecs):
+
+            result = self.get_scores(p_embedding, query_vec)
+            self.results.append(result)
+            sorted_result_idx = np.argsort(result)[::-1]
+            doc_score, doc_indice = (
+                result[sorted_result_idx].tolist()[:topk],
+                sorted_result_idx.tolist()[:topk],
+            )
+            doc_scores.append(doc_score)
+            doc_indices.append(doc_indice)
+
+        if not isinstance(self.results, np.ndarray):
+            self.results = np.array(self.results)
 
         return doc_scores, doc_indices
 
@@ -168,7 +221,7 @@ class BM25Retrieval:
             total = []
             print("-----Retrieve Start-----")
             doc_scores, doc_indices = self.get_relevant_doc_bulk(
-                query_or_dataset["question"], k=topk
+                query_or_dataset["question"], topk=topk
             )
             print("-------test line--------")
 
