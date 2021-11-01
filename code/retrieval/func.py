@@ -9,16 +9,20 @@ from tqdm.auto import tqdm
 
 from transformers import AutoTokenizer
 
-def retrieve_from_embedding(dataset_path, q_encoder, tokenizer_name, emb_path: str, topk: int, context_path: str):
 
-    '''
+def retrieve_from_embedding(
+    dataset_path, q_encoder, tokenizer_name, emb_path: str, topk: int, context_path: str
+):
+
+    """
     Input : Dataset path(question), Question encoder, Tokenizer, Embedding path, number of top score documents (topk), wikipedia json file path
     Output : Dataframe of topk dense retrieval documents
-    '''
+    """
 
-## get relevant doc bulk
+    ## get relevant doc bulk
     dataset = load_from_disk(dataset_path)
-    dataset = dataset['validation']
+    # dataset = dataset['validation']
+    dataset = dataset["train"]
 
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
@@ -47,7 +51,7 @@ def retrieve_from_embedding(dataset_path, q_encoder, tokenizer_name, emb_path: s
         sorted_result = np.argsort(result[i, :])[::-1]
         doc_scores.append(result[i, :][sorted_result].tolist()[:topk])
         doc_indices.append(sorted_result.tolist()[:topk])
-## get relevant doc bulk
+    ## get relevant doc bulk
 
     with open(context_path, "r", encoding="utf-8") as f:
         wiki = json.load(f)
@@ -77,6 +81,7 @@ def retrieve_from_embedding(dataset_path, q_encoder, tokenizer_name, emb_path: s
     cqas = pd.DataFrame(total)
     return cqas
 
+
 def retrieval_acc(df, topk):
     df["correct"] = False
     df["correct_rank"] = 0
@@ -88,6 +93,6 @@ def retrieval_acc(df, topk):
                 df.at[i, "correct"] = True
                 df.at[i, "correct_rank"] = count
 
-    accuracy = df["correct"].sum() / len(df),
-    
+    accuracy = (df["correct"].sum() / len(df),)
+
     return accuracy
