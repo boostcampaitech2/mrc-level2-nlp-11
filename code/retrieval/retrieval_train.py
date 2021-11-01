@@ -28,6 +28,8 @@ from transformers import (
     set_seed,
 )
 
+from func import retrieve_from_embedding, retrieval_acc
+
 
 class DenseRetrieval:
     def __init__(
@@ -49,11 +51,11 @@ class DenseRetrieval:
         self.q_encoder = q_encoder
         torch.cuda.empty_cache()
 
-    def save_embedding(self):
+    def save_embedding(self, save_path):
 
         wiki_data_list = WikiDataset(self.args.context_path, self.args.tokenizer_name)
 
-        emb_path = self.args.save_pickle_path
+        # emb_path = self.args.save_pickle_path
         p_encoder = self.p_encoder
         p_embs = []
         with torch.no_grad():
@@ -70,7 +72,7 @@ class DenseRetrieval:
         p_embs = torch.Tensor(p_embs).squeeze()
 
         p_embedding = p_embs
-        with open(emb_path, "wb") as file:
+        with open(save_path, "wb") as file:
             pickle.dump(p_embedding, file)
         print("Embedding pickle saved.")
 
@@ -138,17 +140,17 @@ class DenseRetrieval:
 
         global_step = 0
         epoch = 0
+
         p_encoder.zero_grad()
         q_encoder.zero_grad()
         torch.cuda.empty_cache()
-        # train_dataloader = DataLoader(
-        #     train_dataset, shuffle=True, batch_size=batch_size
-        # )
 
         for _ in tqdm(range(int(model_args.num_train_epochs)), desc="Epoch"):
+
+            epoch += 1
             ## get negative samples with every epoch
-            # train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
             train_dataset = TrainRetrievalInBatchDataset(
+                # train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
                 self.args.tokenizer_name,
                 self.args.dataset_name,
                 num_neg,
@@ -161,6 +163,8 @@ class DenseRetrieval:
                 for batch in tepoch:
                     p_encoder.train()
                     q_encoder.train()
+
+                    global_step += 1
 
                     targets = torch.zeros(batch_size).long()
                     targets = targets.to(model_args.device)
@@ -211,15 +215,33 @@ class DenseRetrieval:
                     q_encoder.zero_grad()
 
                     torch.cuda.empty_cache()
-                    global_step += 1
 
                     del p_inputs, q_inputs
                     if global_step % args.log_step == 0:
+
+                        # validation accuracy
+
+                        # save_pickle_path_full = (
+                        #     self.args.save_pickle_path + "_" + str(global_step) + ".bin"
+                        # )
+                        # self.save_embedding(save_pickle_path_full)
+                        # df_topk = retrieve_from_embedding(
+                        #     self.args.dataset_name,
+                        #     self.q_encoder,
+                        #     self.args.tokenizer_name,
+                        #     save_pickle_path_full,
+                        #     self.args.num_neg + 1,
+                        #     self.args.context_path,
+                        # )
+
+                        # val_acc = retrieval_acc(df_topk, self.args.num_neg + 1)
+                        # wandb.log({"loss": loss, "val_acc": val_acc}, step=global_step)
+                        # del df_topk
+
                         wandb.log({"loss": loss}, step=global_step)
 
                     # if global_step % 50 == 0:
                     #    self.eval(p_encoder, q_encoder, global_step)
-            epoch += 1
             if epoch % args.save_epoch == 0:
                 p_encoder.save_pretrained(
                     save_directory=args.save_path_p + "_" + str(epoch)
@@ -270,7 +292,7 @@ if __name__ == "__main__":
         "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
-        "--tokenizer_name",  #  tokenizer_name
+        "--tokenizer_name",
         default="klue/bert-base",
         type=str,
         help="",
@@ -381,4 +403,4 @@ if __name__ == "__main__":
         q_encoder,
     )
     retriever.train()
-    retriever.save_embedding()
+    retriever.save_embedding(args.save_pickle_path + ".bin")

@@ -105,15 +105,15 @@ class RetrievalInference:
         return df
 
     def print_result(self, df, length):
-        for i in range(length):
-            print("=======================================")
-            f = df.iloc[i]
-            print(f'Question         : {f["question"]}')
-            print(f'original_context : {f["original_context"]}')
-            print("\n\n")
-            for i in range(len(f["context"])):
-                print(f'score\t:{f["scores"][i]},\ncontext\t: {f["context"][i]}\n')
-            print("=======================================")
+        # for i in range(length):
+        # print("=======================================")
+        # f = df.iloc[i]
+        # print(f'Question         : {f["question"]}')
+        # print(f'original_context : {f["original_context"]}')
+        # print("\n\n")
+        # for i in range(len(f["context"])):
+        #     print(f'score\t:{f["scores"][i]},\ncontext\t: {f["context"][i]}\n')
+        # print("=======================================")
 
         print(
             "correct retrieval result by exhaustive search",
@@ -167,8 +167,8 @@ if __name__ == "__main__":
     retrieval = RetrievalInference(args, q_encoder, tokenizer, wiki_data)
     retrieval.get_dense_embedding()
 
-    # df = retrieval.retrieval(validation_dataset, topk=5)
-    df = retrieval.retrieval(train_dataset, topk=5)
+    df = retrieval.retrieval(validation_dataset, topk=5)
+    # df = retrieval.retrieval(train_dataset, topk=50)
 
     df = retrieval.get_acc_score(df)
 
