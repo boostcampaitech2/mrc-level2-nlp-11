@@ -19,6 +19,7 @@ from datasets import (
     load_from_disk,
     concatenate_datasets,
 )
+import retrieval
 
 
 class BM25Retrieval:
@@ -36,14 +37,6 @@ class BM25Retrieval:
         # self.contexts = [wiki[str(i)]["text"] for i in range(len(wiki))]
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
-
-        # print(self.bm25v.doc_freqs)
-        # tokenized_context = _tokenize_corpus(self.contexts)
-
-        # sample_query = "국제 기구에 가입되어있지 않은 나라는?"
-        # tokenized_query = tokenizer(sample_query)
-        # print(self.bm25v.get_scores(tokenized_query))
-        # print(self.bm25v.get_top_n(tokenized_query, self.contexts, n=2))
 
     def get_scores(self, query):
         """
@@ -221,6 +214,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path", default="../../../data", type=str, help="dataset directory path"
     )
+    parser.add_argument(
+        "--context_path",
+        default="wikipedia_documents.json",
+        type=str,
+        help="",
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.random_seed)
@@ -248,6 +247,11 @@ if __name__ == "__main__":
     # print(full_ds["question"])
 
     retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize)
+    # retriever = retrieval.SparseRetrieval(
+    #     tokenize_fn=tokenizer.tokenize,
+    #     data_path=args.data_path,
+    #     context_path=args.context_path,
+    # )
     retriever.get_sparse_embedding()
     # retriever.retrieve(full_ds, topk=5)
     # retriever.retrieve(org_dataset["train"]["question"][20], topk=5)
@@ -257,11 +261,10 @@ if __name__ == "__main__":
     #     break
     # print(type(retriever.contexts))
 
-    df = retriever.retrieve(org_dataset["train"][:], topk=50)
+    df = retriever.retrieve(org_dataset["train"], topk=5)
     print(df)
     count = 0
-    print(df["original_context"][0])
-    [print(f"{text}\n\n\n\n") for text in df["context"][0]]
+    # [print(f"{text}\n\n\n\n") for text in df["context"][0]]
     for i in range(len(df)):
         # print(df["original_context_id"][i], df["context_id"][i])
         # if df["original_context_id"][i] in df["context_id"][i]:
