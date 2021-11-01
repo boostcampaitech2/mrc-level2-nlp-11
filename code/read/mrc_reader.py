@@ -43,7 +43,7 @@ class Reader:
         The method for getting model and tokenizer
     """
 
-    get_custom_class = {"testmodel": "Test"}
+    get_custom_class = {"testmodel": "Test", "custom1":"CustomRoberta"}
 
     def __init__(
         self,
