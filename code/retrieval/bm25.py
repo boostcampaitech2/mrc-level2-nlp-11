@@ -33,6 +33,7 @@ class BM25Retrieval:
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
         self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
+        # self.contexts = [wiki[str(i)]["text"] for i in range(len(wiki))]
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
 
@@ -140,6 +141,7 @@ class BM25Retrieval:
         """
 
         result = [self.get_scores(query) for query in queries]
+        print(result)
         if not isinstance(result, np.ndarray):
             result = np.array(result)
         doc_scores = []
@@ -148,12 +150,13 @@ class BM25Retrieval:
             sorted_result = np.argsort(result[i, :])[::-1]
             doc_scores.append(result[i, :][sorted_result].tolist()[:k])
             doc_indices.append(sorted_result.tolist()[:k])
+            print(doc_scores[-1], doc_indices[-1])
+
         return doc_scores, doc_indices
 
     def retrieve(
         self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
     ) -> Union[Tuple[List, List], pd.DataFrame]:
-
         assert self.idf is not None
         if isinstance(query_or_dataset, str):
             doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
@@ -165,30 +168,35 @@ class BM25Retrieval:
 
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
 
-        elif isinstance(query_or_dataset, Dataset):
+        else:
+            # elif isinstance(query_or_dataset, Dataset):
 
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
+            print("-----Retrieve Start-----")
             doc_scores, doc_indices = self.get_relevant_doc_bulk(
                 query_or_dataset["question"], k=topk
             )
-            for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="BM25 retrieval: ")
-            ):
+            print("-------test line--------")
+
+            for idx in range(len(query_or_dataset["question"])):
+
                 tmp = {
                     # Query와 해당 id를 반환합니다.
-                    "question": example["question"],
-                    "id": example["id"],
+                    "question": query_or_dataset["question"][idx],
+                    "id": query_or_dataset["id"][idx],
                     # Retrieve한 Passage의 id, context를 반환합니다.
                     "context_id": doc_indices[idx],
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
+                    "context": [self.contexts[pid] for pid in doc_indices[idx]],
                 }
-                if "context" in example.keys() and "answers" in example.keys():
+                if (
+                    "context" in query_or_dataset.keys()
+                    and "answers" in query_or_dataset.keys()
+                ):
                     # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                    tmp["original_context"] = example["context"]
-                    tmp["answers"] = example["answers"]
+                    tmp["original_context"] = query_or_dataset["context"][idx]
+                    tmp["answers"] = query_or_dataset["answers"][idx]
+                    tmp["original_context_id"] = query_or_dataset["document_id"][idx]
                 total.append(tmp)
 
             cqas = pd.DataFrame(total)
@@ -242,19 +250,25 @@ if __name__ == "__main__":
     retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize)
     retriever.get_sparse_embedding()
     # retriever.retrieve(full_ds, topk=5)
-    # print(retriever.retrieve(org_dataset["train"]["question"][25], topk=5))
-    # print(org_dataset["train"]["context"][25])
+    # retriever.retrieve(org_dataset["train"]["question"][20], topk=5)
+    # print(org_dataset["train"]["context"][20])
     # for query in full_ds["question"]:
     #     print(retriever.retrieve(query, topk=5))
     #     break
     # print(type(retriever.contexts))
-    df = retriever.retrieve(org_dataset["train"], topk=10)
-    print(df)
-    # df["correct"] = df["original_context"] == df["context"]
-    # for i in range(100):
-    #     print(df.iloc[i])
 
-    # print(
-    #     "correct retrieval result by exhaustive search",
-    #     df["correct"].sum() / len(df),  # acc
-    # )
+    df = retriever.retrieve(org_dataset["train"][:], topk=50)
+    print(df)
+    count = 0
+    print(df["original_context"][0])
+    [print(f"{text}\n\n\n\n") for text in df["context"][0]]
+    for i in range(len(df)):
+        # print(df["original_context_id"][i], df["context_id"][i])
+        # if df["original_context_id"][i] in df["context_id"][i]:
+        if df["original_context"][i] in df["context"][i]:
+            count += 1
+
+    print(
+        "correct retrieval result by exhaustive search",
+        count / len(df),  # acc
+    )
