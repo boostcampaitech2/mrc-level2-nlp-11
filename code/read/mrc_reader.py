@@ -91,8 +91,8 @@ class Reader:
             model_module = getattr(
                 import_module(self.model_name), self.get_custom_class[self.model_name]
             )
-            model = model_module(self.params)
-            tokenizer = None
+            self.model = model_module()
+            self.tokenizer = self.model.get_tokenizer()
         else:
             print("잘못된 이름 또는 없는 모델입니다.")
 

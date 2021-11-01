@@ -101,6 +101,7 @@ def run_mrc(
     last_checkpoint, max_seq_length = check_no_error(
         data_args, training_args, datasets, tokenizer
     )
+
     reader.set_max_seq_length(max_seq_length)
 
     # Train preprocessing / 전처리를 진행합니다.
@@ -166,8 +167,8 @@ def run_mrc(
                 logger.info(f"  {key} = {value}")
                 writer.write(f"{key} = {value}\n")
                 
-        #best_model dir에 모델 저장
-        model.save_pretrained(trainer_args.best_model_dir)
+        # #best_model dir에 모델 저장
+        # model.save_pretrained(trainer_args.best_model_dir)
         # State 저장
         trainer.state.save_to_json(
             os.path.join(training_args.output_dir, "trainer_state.json")
