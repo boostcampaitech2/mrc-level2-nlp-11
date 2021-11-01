@@ -49,6 +49,7 @@ class BM25Retrieval:
         self.contexts = list(
             dict.fromkeys([v["title"] + ": " + v["text"] for v in wiki.values()])
         )
+        self.title = [i.split(":")[0] for i in self.contexts]
 
         self.ids = list(range(len(self.contexts)))
 
@@ -58,8 +59,9 @@ class BM25Retrieval:
             tokenizer=self.tokenizer, ngram_range=(1, 2), use_idf=False, norm=None
         )
         self.idf_encoder = TfidfVectorizer(
-            tokenizer=self.tokenizer, ngram_range=(1, 2), norm=None, smooth_idf=False
+            tokenizer=self.tokenizer, ngram_range=(1, 2), use_idf=True, norm=None
         )
+
         self.dls = np.zeros(len(self.contexts))
 
         for idx, context in enumerate(self.contexts):
@@ -77,46 +79,26 @@ class BM25Retrieval:
         )
         len_p = self.dls
 
-        # score = np.zeros(self.corpus_size)
-        # doc_len = np.array(len_p)
         p_emb_for_q = p_embedding[:, query_vec.indices]
-        print("-----test point 1-----")
         denom = p_emb_for_q + (k1 * (1 - b + b * len_p / avdl))[:, None]
-        print("-----test point 2-----")
-        idf_broadcasted = np.broadcast_to(self.idf, p_emb_for_q.shape)
-        print("-----test point 3-----")
+        idf = self.idf[None, query_vec.indices] - 1.0
+        idf_broadcasted = np.broadcast_to(idf, p_emb_for_q.shape)
         numer = p_emb_for_q * (k1 + 1)
-        # print(type(denom))
-        # print(type(numer))
-        # print(numer.size(), denom.size(), idf_broadcasted.size())
-        # print(type(np.multiply((numer / denom), idf_broadcasted)))
-        print("----start multiply----")
+
         result = (np.multiply((numer / denom), idf_broadcasted)).sum(1).A1
-        print("----- end of multiply -----")
 
         if not isinstance(result, np.ndarray):
             result = result.toarray()
 
         return result
-        # q_freq = p_embedding[:, query_vec.indices]
-        # idf_broadcasted = np.broadcast_to(self.idf, q_freq.shape)
-        # print(self.idf)
-        # print(q_freq.shape)
-        # print(idf_broadcasted.shape)
-
-        # score = (
-        #     q_freq * (k1 + 1) / (q_freq + k1 * (1 - b + b * len_p / self.avdl))
-        # ) * idf_broadcasted
-        # return score
 
     def _exec_embedding(self):
         self.p_embedding = self.encoder.fit_transform(
             tqdm(self.contexts, desc="TF calculation: ")
         )
-        self.idf_encoder.fit(tqdm(self.contexts, desc="IDF calculation: "))
-        print("-----transform idf-----")
-        self.idf = self.idf_encoder.transform(self.contexts)
-        print("-----Done-----")
+        self.idf = self.idf_encoder.fit(
+            tqdm(self.contexts, desc="IDF calculation: ")
+        ).idf_
 
         return self.p_embedding, self.encoder, self.idf, self.idf_encoder
 
@@ -126,7 +108,7 @@ class BM25Retrieval:
             and os.path.isfile(self.encoder_path)
             and os.path.isfile(self.idf_encoder_path)
             and os.path.isfile(self.idf_path)
-            and False
+            # and False
             # and not self.args.retriever.retrain
         ):
             with open(self.embed_path, "rb") as f:
@@ -173,7 +155,6 @@ class BM25Retrieval:
     def get_relevant_doc_bulk(
         self, queries: List, topk: Optional[int] = 5
     ) -> Tuple[List, List]:
-
         query_vecs = self.encoder.transform(queries)
 
         doc_scores = []
@@ -187,6 +168,7 @@ class BM25Retrieval:
 
             result = self.get_scores(p_embedding, query_vec)
             self.results.append(result)
+
             sorted_result_idx = np.argsort(result)[::-1]
             doc_score, doc_indice = (
                 result[sorted_result_idx].tolist()[:topk],
@@ -225,8 +207,7 @@ class BM25Retrieval:
             )
             print("-------test line--------")
 
-            for idx in range(len(query_or_dataset["question"])):
-
+            for idx in tqdm(range(len(query_or_dataset["question"]))):
                 tmp = {
                     # Query와 해당 id를 반환합니다.
                     "question": query_or_dataset["question"][idx],
@@ -236,8 +217,8 @@ class BM25Retrieval:
                     "context": [self.contexts[pid] for pid in doc_indices[idx]],
                 }
                 if (
-                    "context" in query_or_dataset.keys()
-                    and "answers" in query_or_dataset.keys()
+                    "context" in query_or_dataset[idx].keys()
+                    and "answers" in query_or_dataset[idx].keys()
                 ):
                     # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
                     tmp["original_context"] = query_or_dataset["context"][idx]
@@ -259,7 +240,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model_name_or_path",
-        # default="klue/bert-base",
         default="klue/bert-base",
         type=str,
         help="",
@@ -286,9 +266,6 @@ if __name__ == "__main__":
         use_fast=False,
     )
 
-    # train_dataset = TrainRetrievalDataset(args.model_name_or_path, args.dataset_name)
-    # validation_dataset = ValRetrievalDataset(args.model_name_or_path, args.dataset_name)
-
     org_dataset = load_from_disk(args.dataset_name)
     full_ds = concatenate_datasets(
         [
@@ -297,32 +274,24 @@ if __name__ == "__main__":
         ]
     )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
     print("*" * 40, "query dataset", "*" * 40)
-    # print(full_ds["question"])
 
     retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize)
-    # retriever = retrieval.SparseRetrieval(
-    #     tokenize_fn=tokenizer.tokenize,
-    #     data_path=args.data_path,
-    #     context_path=args.context_path,
-    # )
-    retriever.get_sparse_embedding()
-    # retriever.retrieve(full_ds, topk=5)
-    # retriever.retrieve(org_dataset["train"]["question"][20], topk=5)
-    # print(org_dataset["train"]["context"][20])
-    # for query in full_ds["question"]:
-    #     print(retriever.retrieve(query, topk=5))
-    #     break
-    # print(type(retriever.contexts))
 
-    df = retriever.retrieve(org_dataset["train"], topk=5)
-    print(df)
+    retriever.get_sparse_embedding()
+
+    df = retriever.retrieve(org_dataset["train"], topk=200)
     count = 0
-    # [print(f"{text}\n\n\n\n") for text in df["context"][0]]
+    cnt = [0 for _ in range(201)]
     for i in range(len(df)):
-        # print(df["original_context_id"][i], df["context_id"][i])
-        # if df["original_context_id"][i] in df["context_id"][i]:
-        if df["original_context"][i] in df["context"][i]:
-            count += 1
+        for n, j in enumerate(df["context"][i]):
+            if df["original_context"][i] == ": ".join(j.split(": ")[1:]):
+                cnt[n + 1] += 1
+                count += 1
+                break
+
+    for n, i in enumerate(cnt):
+        if i != 0:
+            print(f"{n} : {i}")
 
     print(
         "correct retrieval result by exhaustive search",
