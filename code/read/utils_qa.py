@@ -20,10 +20,12 @@ import collections
 import json
 import logging
 import os
-from typing import Optional, Tuple, Any
+import re
+from typing import Optional, Tuple, Any, NoReturn
 
 import numpy as np
 from tqdm.auto import tqdm
+import pandas as pd
 
 import torch
 import random
@@ -36,7 +38,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
-from datasets import DatasetDict, load_metric
+from datasets import Dataset, DatasetDict, load_metric, load_from_disk
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -54,6 +56,64 @@ def compute_metrics(metric, p: EvalPrediction):
     """
     return {"eval_exact_match": result["exact_match"], "eval_f1": result["f1"]}
     # return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+
+# context 전처리 함수
+def preprocess(text):
+    text = re.sub(r"\n", " ", text)
+    text = re.sub(r"\\n", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"#", " ", text)
+    text = re.sub(
+        r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥<>()\s\.\?!》《≪≫\'<>〈〉:‘’%,『』「」＜＞・\"-“”∧]",
+        "",
+        text,
+    )
+    return text
+
+
+# 전처리된 context가 적용된 train dataset을 저장 및 반환하는 함수.
+def get_preprocess_dataset(data_path: str = "../../data/") -> DatasetDict:
+    path = f"{data_path}pre_train_dataset"
+    if os.path.isdir(path):
+        return load_from_disk(path)
+    else:
+        train_dataset = load_from_disk(f"{data_path}train_dataset")
+        t_train = train_dataset["train"]
+        t_val = train_dataset["validation"]
+        tmp_dict_val = []
+        tmp_dict_train = []
+
+        for datum in t_train:
+            answer_start = datum["answers"]["answer_start"][0]
+            context = datum["context"]
+            pre_bef_cont = preprocess(context[:answer_start])
+            pre_aft_cont = preprocess(context[answer_start:])
+            context = pre_bef_cont + pre_aft_cont
+            answer_start = len(pre_bef_cont)
+            datum["context"] = context
+            datum["answers"]["answer_start"][0] = answer_start
+            tmp_dict_train.append(datum)
+
+        for datum in t_val:
+            answer_start = datum["answers"]["answer_start"][0]
+            context = datum["context"]
+            pre_bef_cont = preprocess(context[:answer_start])
+            pre_aft_cont = preprocess(context[answer_start:])
+            context = pre_bef_cont + pre_aft_cont
+            answer_start = len(pre_bef_cont)
+            datum["context"] = context
+            datum["answers"]["answer_start"][0] = answer_start
+            tmp_dict_val.append(datum)
+
+        tmp_total_dt = DatasetDict(
+            {
+                "train": Dataset.from_pandas(pd.DataFrame(tmp_dict_val)),
+                "validation": Dataset.from_pandas(pd.DataFrame(tmp_dict_train)),
+            }
+        )
+        tmp_total_dt.save_to_disk(path)
+        return tmp_total_dt
 
 
 def set_seed(seed: int = 42):

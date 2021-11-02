@@ -35,6 +35,7 @@ def main():
     training_args = TrainingArguments(
         output_dir=trainer_args.output_dir,
         learning_rate=trainer_args.lr,
+        save_total_limit=10,
         per_device_train_batch_size=trainer_args.train_batch_size,
         per_device_eval_batch_size=trainer_args.eval_batch_size,
         num_train_epochs=trainer_args.epochs,
@@ -68,7 +69,10 @@ def main():
     # 모델을 초기화하기 전에 난수를 고정합니다.
     set_seed(training_args.seed)
 
-    datasets = load_from_disk(data_args.dataset_name)
+    if data_args.use_preprocess:
+        datasets = get_preprocess_dataset()
+    else:
+        datasets = load_from_disk(data_args.dataset_name)
     print(datasets)
 
     # Reader Class 생성
@@ -79,7 +83,14 @@ def main():
     # do_train mrc model 혹은 do_eval mrc model
     if training_args.do_train or training_args.do_eval:
         run_mrc(
-            data_args, training_args, model_args, datasets, tokenizer, model, reader
+            data_args,
+            training_args,
+            model_args,
+            trainer_args,
+            datasets,
+            tokenizer,
+            model,
+            reader,
         )
 
 
@@ -87,6 +98,7 @@ def run_mrc(
     data_args: DataTrainingArguments,
     training_args: TrainingArguments,
     model_args: ModelArguments,
+    trainer_args: TrainerArguments,
     datasets: DatasetDict,
     tokenizer,
     model,
@@ -165,8 +177,8 @@ def run_mrc(
             for key, value in sorted(train_result.metrics.items()):
                 logger.info(f"  {key} = {value}")
                 writer.write(f"{key} = {value}\n")
-                
-        #best_model dir에 모델 저장
+
+        # best_model dir에 모델 저장
         model.save_pretrained(trainer_args.best_model_dir)
         # State 저장
         trainer.state.save_to_json(
