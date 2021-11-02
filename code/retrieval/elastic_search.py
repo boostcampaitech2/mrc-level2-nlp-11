@@ -26,7 +26,7 @@ class ElasticSearch:
         self.wiki_contexts: list = None
         self.get_wiki_parsed()
 
-        self.index_name = "wiki_yyh22"
+        self.index_name = "wiki"
         self.es = self.set_elastic_server()
         if not self.es:
             exit()
