@@ -18,6 +18,7 @@ Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
 
 from transformers import Trainer, is_datasets_available, is_torch_tpu_available
 from transformers.trainer_utils import PredictionOutput
+from datasets import load_metric
 
 
 if is_datasets_available():
@@ -29,10 +30,23 @@ if is_torch_tpu_available():
 
 # Huggingface의 Trainer를 상속받아 QuestionAnswering을 위한 Trainer를 생성합니다.
 class QuestionAnsweringTrainer(Trainer):
-    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        eval_examples=None,
+        max_answer_length=None,
+        post_process_function=None,
+        dataset=None,
+        answer_column_name=None,
+        **kwargs
+    ):
         super().__init__(*args, **kwargs)
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
+        self.max_answer_length = max_answer_length
+        self.metric = load_metric("squad")
+        self.dataset = dataset
+        self.answer_column_name = answer_column_name
 
     def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
@@ -62,9 +76,15 @@ class QuestionAnsweringTrainer(Trainer):
 
         if self.post_process_function is not None and self.compute_metrics is not None:
             eval_preds = self.post_process_function(
-                eval_examples, eval_dataset, output.predictions, self.args
+                eval_examples,
+                eval_dataset,
+                output.predictions,
+                self.args,
+                self.max_answer_length,
+                self.dataset,
+                self.answer_column_name,
             )
-            metrics = self.compute_metrics(eval_preds)
+            metrics = self.compute_metrics(self.metric, eval_preds)
 
             self.log(metrics)
         else:
@@ -108,6 +128,12 @@ class QuestionAnsweringTrainer(Trainer):
             )
 
         predictions = self.post_process_function(
-            test_examples, test_dataset, output.predictions, self.args
+            test_examples,
+            test_dataset,
+            output.predictions,
+            self.args,
+            self.max_answer_length,
+            self.dataset,
+            self.answer_column_name,
         )
         return predictions

@@ -1,6 +1,5 @@
 """
 Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
-
 대부분의 로직은 train.py 와 비슷하나 retrieval, predict 부분이 추가되어 있습니다.
 """
 import logging
@@ -21,7 +20,7 @@ from datasets import (
     DatasetDict,
 )
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
+from transformers import (AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer)
 
 from transformers import (
     DataCollatorWithPadding,
@@ -31,12 +30,14 @@ from transformers import (
     set_seed,
 )
 
-from read.utils_qa import postprocess_qa_predictions, check_no_error
+from read.utils_qa import *
 from read.trainer_qa import QuestionAnsweringTrainer
 from retrieval import SparseRetrieval
 from retrieval_model import BertEncoder
 from retrieval_inference import RetrievalInference
 from retrieval_dataset import WikiDataset
+from retrieval.elastic_search import ElasticSearch
+
 
 from arguments import (
     ModelArguments,
@@ -79,26 +80,33 @@ def main():
 
     # AutoConfig를 이용하여 pretrained model 과 tokenizer를 불러옵니다.
     # argument로 원하는 모델 이름을 설정하면 옵션을 바꿀 수 있습니다.
-    config = AutoConfig.from_pretrained(
-        model_args.config_name
-        if model_args.config_name
-        else model_args.model_name_or_path,
-    )
+    # config = AutoConfig.from_pretrained(
+    #     model_args.config_name
+    #     if model_args.config_name
+    #     else model_args.model_name_or_path,
+    # )
     tokenizer = AutoTokenizer.from_pretrained(
-        model_args.tokenizer_name
-        if model_args.tokenizer_name
-        else model_args.model_name_or_path,
-        use_fast=True,
+        "klue/roberta-large"
+    #     if model_args.tokenizer_name
+    #     else model_args.model_name_or_path,
+    #     use_fast=True,
     )
     model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
+        model_args.model_name_or_path
     )
+    es = ElasticSearch()
 
+    # True일 경우 : run passage retrieval
     if data_args.eval_retrieval:
-        datasets = run_dense_retrieval_topk(data_args, datasets)
-
+        # datasets = run_sparse_retrieval(
+        #     tokenizer.tokenize,
+        #     datasets,
+        #     training_args,
+        #     data_args,
+        # )
+        k = 5
+        datasets = es.run_retrieval(datasets["validation"], k)
+        
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
@@ -155,27 +163,8 @@ def run_sparse_retrieval(
                 "question": Value(dtype="string", id=None),
             }
         )
-
-    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
-    elif training_args.do_eval:
-        f = Features(
-            {
-                "answers": Sequence(
-                    feature={
-                        "text": Value(dtype="string", id=None),
-                        "answer_start": Value(dtype="int32", id=None),
-                    },
-                    length=-1,
-                    id=None,
-                ),
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
     return datasets
-
 
 def run_mrc(
     data_args: DataTrainingArguments,
@@ -259,43 +248,6 @@ def run_mrc(
         tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None
     )
 
-    # Post-processing:
-    def post_processing_function(
-        examples,
-        features,
-        predictions: Tuple[np.ndarray, np.ndarray],
-        training_args: TrainingArguments,
-    ) -> EvalPrediction:
-        # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
-        predictions = postprocess_qa_predictions(
-            examples=examples,
-            features=features,
-            predictions=predictions,
-            max_answer_length=data_args.max_answer_length,
-            output_dir=training_args.output_dir,
-        )
-        # Metric을 구할 수 있도록 Format을 맞춰줍니다.
-        formatted_predictions = [
-            {"id": k, "prediction_text": v} for k, v in predictions.items()
-        ]
-
-        if training_args.do_predict:
-            return formatted_predictions
-        elif training_args.do_eval:
-            references = [
-                {"id": ex["id"], "answers": ex[answer_column_name]}
-                for ex in datasets["validation"]
-            ]
-
-            return EvalPrediction(
-                predictions=formatted_predictions, label_ids=references
-            )
-
-    metric = load_metric("squad")
-
-    def compute_metrics(p: EvalPrediction) -> Dict:
-        return metric.compute(predictions=p.predictions, references=p.label_ids)
-
     print("init trainer...")
     # Trainer 초기화
     trainer = QuestionAnsweringTrainer(
@@ -307,6 +259,9 @@ def run_mrc(
         tokenizer=tokenizer,
         data_collator=data_collator,
         post_process_function=post_processing_function,
+        max_answer_length=data_args.max_answer_length,
+        dataset=datasets,
+        answer_column_name=answer_column_name,
         compute_metrics=compute_metrics,
     )
 
@@ -323,14 +278,6 @@ def run_mrc(
             "No metric can be presented because there is no correct answer given. Job done!"
         )
 
-    if training_args.do_eval:
-        metrics = trainer.evaluate()
-        metrics["eval_samples"] = len(eval_dataset)
-
-        trainer.log_metrics("test", metrics)
-        trainer.save_metrics("test", metrics)
-
 
 if __name__ == "__main__":
-
     main()

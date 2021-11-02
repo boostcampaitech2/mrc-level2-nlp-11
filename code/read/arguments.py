@@ -9,7 +9,7 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        default="klue/bert-base",
+        default="pre_klue/bert-base",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
@@ -89,4 +89,39 @@ class DataTrainingArguments:
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+    use_preprocess: bool = field(
+        default=True, metadata={"help": "apply preprocessing traindataset"}
+    )
+
+
+@dataclass
+class TrainerArguments:
+    output_dir: str = field(
+        default="saved_checkpoint",
+        metadata={"help": "The name of directory where the checkpoints are saved"},
+    )
+    lr: float = field(default=1e-5, metadata={"help": "The value of Learning-rate"})
+    train_batch_size: int = field(
+        default=4, metadata={"help": "The batch size of train data"}
+    )
+    eval_batch_size: int = field(
+        default=4, metadata={"help": "The batch size of evaluation data"}
+    )
+    epochs: int = field(default=5, metadata={"help": "The number of epochs"})
+
+    logging_steps: int = field(
+        default=500, metadata={"help": "The number of steps for logging"}
+    )
+    run_name: str = field(
+        default="Reader-bert_base", metadata={"help": "The run name of wandb"}
+    )
+    save_steps: int = field(
+        default=500, metadata={"help": "The number of steps for saving"}
+    )
+    eval_steps: int = field(
+        default=500, metadata={"help": "The nuber of steps for evaluation"}
+    )
+    best_model_dir: str = field(
+        default="./best_model", metadata={"help": "The directory for best model"}
     )
