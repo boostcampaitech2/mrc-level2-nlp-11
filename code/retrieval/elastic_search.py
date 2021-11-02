@@ -161,6 +161,7 @@ if __name__ == "__main__":
         question_text = datum["question"]
         context = preprocess(datum["context"])
         result = retriever.get_top_k_passages(question_text, k)
+        print(f"question_text : {question_text}, context : {context} ")
         for res in result:
             if res["_source"]["document_text"] == context:
                 match_cnt += 1
