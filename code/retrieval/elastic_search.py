@@ -22,7 +22,7 @@ class ElasticSearch:
 
     def __init__(self):
         self.config: dict = {"host": "localhost", "port": 9200}
-        self.wiki_path: str = "/opt/ml/data/wikipedia_documents.json"
+        self.wiki_path: str = "/opt/ml/mrc-level2-nlp-11/data/wikipedia_documents.json"
         self.wiki_contexts: list = None
         self.get_wiki_parsed()
 
@@ -35,7 +35,7 @@ class ElasticSearch:
             self.insert_data_to_elastic()
 
     def get_wiki_parsed(self) -> None:
-        self.wiki_contexts = get_preprocess_wiki()
+        self.wiki_contexts = get_preprocess_wiki("/opt/ml/mrc-level2-nlp-11/data/")
         # with open(self.wiki_path, "r", encoding="utf-8") as f:
         # wiki_json = json.load(f)
 
@@ -45,7 +45,7 @@ class ElasticSearch:
         # self.wiki_contexts = [{"title": val["title"], "document_text" : val["text"]} for key, val in wiki_json.items()]
 
     def set_elastic_server(self):
-        path_to_elastic = "/opt/ml/code/retrieval/elasticsearch-7.9.2/bin/elasticsearch"
+        path_to_elastic = "/opt/ml/mrc-level2-nlp-11/code/retrieval/elasticsearch-7.9.2/bin/elasticsearch"
         es_server = Popen(
             [path_to_elastic],
             stdout=PIPE,
@@ -152,7 +152,7 @@ class ElasticSearch:
 
 if __name__ == "__main__":
     retriever = ElasticSearch()
-    train_path = "/opt/ml/data/train_dataset"
+    train_path = "/opt/ml/mrc-level2-nlp-11/data/train_dataset"
     data = load_from_disk(train_path)
     train_data = data["train"]
     match_cnt = 0
