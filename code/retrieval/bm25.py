@@ -8,19 +8,11 @@ import pandas as pd
 import argparse
 from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List, Tuple, NoReturn, Any, Optional, Union
-from rank_bm25 import BM25Okapi
-from retrieval_dataset import (
-    TrainRetrievalDataset,
-    ValRetrievalDataset,
-    TrainRetrievalInBatchDataset,
-    WikiDataset,
-)
 from datasets import (
     Dataset,
     load_from_disk,
     concatenate_datasets,
 )
-import retrieval
 
 
 class BM25Retrieval:
@@ -29,8 +21,12 @@ class BM25Retrieval:
         tokenize_fn,
         data_path: Optional[str] = "../../../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
+        is_retrain=False,
+        k1=1.2,
+        b=0.75,
     ):
 
+        self.is_retrain = is_retrain
         save_dir = os.path.join(data_path, "bm25")
         if not os.path.exists(save_dir):
             os.mkdir(save_dir)
@@ -49,12 +45,9 @@ class BM25Retrieval:
         self.contexts = list(
             dict.fromkeys([v["title"] + ": " + v["text"] for v in wiki.values()])
         )
-        self.title = [i.split(":")[0] for i in self.contexts]
 
-        self.ids = list(range(len(self.contexts)))
-
-        self.b = 0.75
-        self.k1 = 1.2
+        self.b = b
+        self.k1 = k1
         self.encoder = TfidfVectorizer(
             tokenizer=self.tokenizer, ngram_range=(1, 2), use_idf=False, norm=None
         )
@@ -108,8 +101,7 @@ class BM25Retrieval:
             and os.path.isfile(self.encoder_path)
             and os.path.isfile(self.idf_encoder_path)
             and os.path.isfile(self.idf_path)
-            # and False
-            # and not self.args.retriever.retrain
+            and not self.is_retrain
         ):
             with open(self.embed_path, "rb") as f:
                 self.p_embedding = pickle.load(f)
@@ -205,7 +197,6 @@ class BM25Retrieval:
             doc_scores, doc_indices = self.get_relevant_doc_bulk(
                 query_or_dataset["question"], topk=topk
             )
-            print("-------test line--------")
 
             for idx in tqdm(range(len(query_or_dataset["question"]))):
                 tmp = {
@@ -253,6 +244,9 @@ if __name__ == "__main__":
         type=str,
         help="",
     )
+    parser.add_argument(
+        "--retrain", default=False, type=bool, help="to retrain(1) or not(0)"
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.random_seed)
@@ -275,7 +269,7 @@ if __name__ == "__main__":
     )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
     print("*" * 40, "query dataset", "*" * 40)
 
-    retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize)
+    retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize, is_retrain=args.retrain)
 
     retriever.get_sparse_embedding()
 
