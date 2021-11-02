@@ -5,7 +5,6 @@
 **/results/*
 **/prediction/*
 **/best_model/*
-**/models/*
 **/.*/
 **/outputs/
 !.gitignore

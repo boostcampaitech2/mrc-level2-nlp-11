@@ -18,3 +18,5 @@ then
         elasticsearch-7.9.2/bin/elasticsearch-plugin install analysis-nori
     fi
 fi
+
+cp /opt/ml/mrc-level2-nlp-11/etc/my_stop_dic.txt ./elasticsearch-7.9.2/config/

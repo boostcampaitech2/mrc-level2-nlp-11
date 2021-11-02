@@ -179,7 +179,8 @@ def run_mrc(
                 writer.write(f"{key} = {value}\n")
 
         # best_model dir에 모델 저장
-        model.save_pretrained(trainer_args.best_model_dir)
+        if model_args.model_name_or_path.split("_")[0] == "pre":
+            model.save_pretrained(trainer_args.best_model_dir)
         # State 저장
         trainer.state.save_to_json(
             os.path.join(training_args.output_dir, "trainer_state.json")

@@ -73,7 +73,7 @@ def preprocess(text):
 
 
 # 전처리된 context가 적용된 train dataset을 저장 및 반환하는 함수.
-def get_preprocess_dataset(data_path: str = "/opt/ml/data/") -> DatasetDict:
+def get_preprocess_dataset(data_path: str = "/opt/ml/mrc-level2-nlp-11/data/") -> DatasetDict:
     path = f"{data_path}pre_train_dataset"
     if os.path.isdir(path):
         return load_from_disk(path)
