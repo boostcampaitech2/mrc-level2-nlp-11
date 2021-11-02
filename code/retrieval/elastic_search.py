@@ -22,11 +22,11 @@ class ElasticSearch:
 
     def __init__(self):
         self.config: dict = {"host": "localhost", "port": 9200}
-        self.wiki_path: str = "../../wikipedia_documents.json"
+        self.wiki_path: str = "/opt/ml/data/wikipedia_documents.json"
         self.wiki_contexts: list = None
         self.get_wiki_parsed()
 
-        self.index_name = "wiki"
+        self.index_name = "wiki_yyh22"
         self.es = self.set_elastic_server()
         if not self.es:
             exit()
@@ -35,18 +35,17 @@ class ElasticSearch:
             self.insert_data_to_elastic()
 
     def get_wiki_parsed(self) -> None:
-        with open(self.wiki_path, "r", encoding="utf-8") as f:
-            wiki_json = json.load(f)
+        self.wiki_contexts = get_preprocess_wiki()
+        # with open(self.wiki_path, "r", encoding="utf-8") as f:
+        # wiki_json = json.load(f)
 
-            wiki_contexts = list(dict.fromkeys([v["text"] for v in wiki_json.values()]))
-            self.wiki_contexts = [
-                {"document_text": wiki_contexts[i]} for i in range(len(wiki_contexts))
-            ]
-            # self.wiki_contexts = [{"id": val["document_id"], "title": val["title"], "context" : preprocess(val["text"])} for key, val in wiki_json.items()]
-            # self.wiki_contexts = [{"title": val["title"], "document_text" : val["text"]} for key, val in wiki_json.items()]
+        # wiki_contexts = list(dict.fromkeys([v['text'] for v in wiki_json.values()]))
+        # self.wiki_contexts = [{"document_text" : wiki_contexts[i]} for i in range(len(wiki_contexts))]
+        # self.wiki_contexts = [{"id": val["document_id"], "title": val["title"], "context" : preprocess(val["text"])} for key, val in wiki_json.items()]
+        # self.wiki_contexts = [{"title": val["title"], "document_text" : val["text"]} for key, val in wiki_json.items()]
 
     def set_elastic_server(self):
-        path_to_elastic = "./elasticsearch-7.9.2/bin/elasticsearch"
+        path_to_elastic = "/opt/ml/code/retrieval/elasticsearch-7.9.2/bin/elasticsearch"
         es_server = Popen(
             [path_to_elastic],
             stdout=PIPE,
@@ -153,14 +152,14 @@ class ElasticSearch:
 
 if __name__ == "__main__":
     retriever = ElasticSearch()
-    train_path = "../../data/train_dataset"
+    train_path = "/opt/ml/data/train_dataset"
     data = load_from_disk(train_path)
     train_data = data["train"]
     match_cnt = 0
-    k = 10
+    k = 5
     for datum in tqdm(train_data):
         question_text = datum["question"]
-        context = datum["context"]
+        context = preprocess(datum["context"])
         result = retriever.get_top_k_passages(question_text, k)
         for res in result:
             if res["_source"]["document_text"] == context:
