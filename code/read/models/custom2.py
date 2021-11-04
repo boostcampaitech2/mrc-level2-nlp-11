@@ -11,7 +11,8 @@ class CustomRobertaLarge(nn.Module):
         self.model_name = "klue/roberta-large"
         self.config = AutoConfig.from_pretrained(self.model_name)
         self.roberta = AutoModel.from_pretrained(self.model_name, config=self.config)
-        self.qa_outputs = nn.Linear(self.config.hidden_size*2, 2)
+        self.linear = nn.Linear(self.config.hidden_size*2, self.config.hidden_size)
+        self.qa_outputs = nn.Linear(self.config.hidden_size, 2)
     
     def get_tokenizer(self):
         return AutoTokenizer.from_pretrained(self.model_name)
@@ -46,7 +47,10 @@ class CustomRobertaLarge(nn.Module):
         cls_token = token_embeds[:,0,:].unsqueeze(1)
         cls_token_repeated = cls_token.repeat(1, token_embeds.size(1), 1)
         concatenated_vectors = torch.cat((cls_token_repeated, token_embeds), -1)
-        logits = self.qa_outputs(concatenated_vectors)
+        
+        z1 = self.linear(concatenated_vectors)
+        a1 = F.relu(z1)
+        logits = self.qa_outputs(a1)
         start_logits, end_logits = logits.split(1, dim=-1)
         start_logits = start_logits.squeeze(-1).contiguous()
         end_logits = end_logits.squeeze(-1).contiguous()
