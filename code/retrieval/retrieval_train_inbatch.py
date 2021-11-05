@@ -30,6 +30,12 @@ from transformers import (
 # from func import retrieve_from_embedding, retrieval_acc
 from func import inbatch_input, inbatch_sim_scores
 
+import sys
+
+sys.path.append("../read")
+
+from utils_qa import preprocess, get_preprocess_dataset, get_preprocess_wiki
+
 
 class DenseRetrieval:
     def __init__(
@@ -278,11 +284,11 @@ if __name__ == "__main__":
     set_seed(args.random_seed)
     torch.cuda.manual_seed(args.random_seed)
 
+    get_preprocess_dataset("/opt/ml/data/")
+    get_preprocess_wiki("/opt/ml/data/")
+
     p_encoder = BertEncoder.from_pretrained(args.p_enc_name_or_path).cuda()
     q_encoder = BertEncoder.from_pretrained(args.q_enc_name_or_path).cuda()
-
-    # p_encoder = RobertaEncoder.from_pretrained(args.p_enc_name_or_path).cuda()
-    # q_encoder = RobertaEncoder.from_pretrained(args.q_enc_name_or_path).cuda()
 
     # 이후 arg 뺄 수 있으면 빼기
     model_args = TrainingArguments(
@@ -303,7 +309,6 @@ if __name__ == "__main__":
     retriever = DenseRetrieval(
         args,
         model_args,
-        # train_dataset,
         validation_dataset,
         args.num_neg,
         p_encoder,
