@@ -7,7 +7,7 @@ import argparse
 
 from tqdm.auto import tqdm
 from transformers import AutoTokenizer
-from retrieval_model import BertEncoder
+from retrieval_model import BertEncoder, RobertaEncoder
 from retrieval_dataset import WikiDataset
 
 from datasets import (
@@ -158,6 +158,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
     q_encoder = BertEncoder.from_pretrained(args.load_path_q).cuda()
+    # q_encoder = RobertaEncoder.from_pretrained(args.load_path_q).cuda()
+
     wiki_data = WikiDataset(args.context_path, args.tokenizer_name)
 
     org_dataset = load_from_disk(args.dataset_name)
@@ -167,9 +169,26 @@ if __name__ == "__main__":
     retrieval = RetrievalInference(args, q_encoder, tokenizer, wiki_data)
     retrieval.get_dense_embedding()
 
+    print("----- val top-5 -----")
     df = retrieval.retrieval(validation_dataset, topk=5)
+    df = retrieval.get_acc_score(df)
+    retrieval.print_result(df, 5)
+    print("----- val top-10 -----")
+    df = retrieval.retrieval(validation_dataset, topk=10)
+    df = retrieval.get_acc_score(df)
+    retrieval.print_result(df, 10)
+
+    print("----- train top-5 -----")
+    df = retrieval.retrieval(train_dataset, topk=5)
+    df = retrieval.get_acc_score(df)
+    retrieval.print_result(df, 5)
+    print("----- train top-10 -----")
+    df = retrieval.retrieval(train_dataset, topk=10)
+    df = retrieval.get_acc_score(df)
+    retrieval.print_result(df, 10)
+
     # df = retrieval.retrieval(train_dataset, topk=50)
 
-    df = retrieval.get_acc_score(df)
+    # df = retrieval.get_acc_score(df)
 
-    retrieval.print_result(df, 5)
+    # retrieval.print_result(df, 5)

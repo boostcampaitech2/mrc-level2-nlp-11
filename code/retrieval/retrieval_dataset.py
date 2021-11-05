@@ -15,45 +15,64 @@ from transformers import (
 from retrieval import SparseRetrieval
 from func import retrieve_from_embedding
 
+from torch.utils.data import TensorDataset, RandomSampler
 
-class TrainRetrievalDataset(torch.utils.data.Dataset):
-    def __init__(self, tokenizer_name, dataset_name):
-        org_dataset = load_from_disk(dataset_name)
-        self.train_data = org_dataset["train"]
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
-    def __getitem__(self, idx):
-        tokenizer = self.tokenizer
-        train_data = self.train_data
-        question = train_data["question"][idx]
-        context = train_data["context"][idx]
+def TrainRetrievalDataset(tokenizer_name, dataset_name):
+    org_dataset = load_from_disk(dataset_name)
+    train_data = org_dataset["train"]
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
-        p_seqs = tokenizer(
-            context, padding="max_length", truncation=True, return_tensors="pt"
-        )
-        q_seqs = tokenizer(
-            question, padding="max_length", truncation=True, return_tensors="pt"
-        )
+    question = train_data["question"]
+    context = train_data["context"]
 
-        p_input_ids = p_seqs["input_ids"]
-        p_attention_mask = p_seqs["attention_mask"]
-        p_token_type_ids = p_seqs["token_type_ids"]
+    p_seqs = tokenizer(
+        context, padding="max_length", truncation=True, return_tensors="pt"
+    )
+    q_seqs = tokenizer(
+        question, padding="max_length", truncation=True, return_tensors="pt"
+    )
 
-        q_input_ids = q_seqs["input_ids"]
-        q_attention_mask = q_seqs["attention_mask"]
-        q_token_type_ids = q_seqs["token_type_ids"]
+    return TensorDataset(
+        p_seqs["input_ids"],
+        p_seqs["attention_mask"],
+        p_seqs["token_type_ids"],
+        q_seqs["input_ids"],
+        q_seqs["attention_mask"],
+        q_seqs["token_type_ids"],
+    )
 
-        return (
-            p_input_ids,
-            p_attention_mask,
-            p_token_type_ids,
-            q_input_ids,
-            q_attention_mask,
-            q_token_type_ids,
-        )
 
-    def __len__(self):
-        return len(self.train_data)
+# class TrainRetrievalDataset(torch.utils.data.Dataset):
+#     def __init__(self, tokenizer_name, dataset_name):
+#         org_dataset = load_from_disk(dataset_name)
+#         self.train_data = org_dataset["train"]
+#         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+
+#     def __getitem__(self, idx):
+#         tokenizer = self.tokenizer
+#         train_data = self.train_data
+#         question = train_data["question"][idx]
+#         context = train_data["context"][idx]
+
+#         p_seqs = tokenizer(
+#             context, padding="max_length", truncation=True, return_tensors="pt"
+#         )
+#         q_seqs = tokenizer(
+#             question, padding="max_length", truncation=True, return_tensors="pt"
+#         )
+
+#         return TensorDataset(
+#             p_seqs["input_ids"],
+#             p_seqs["attention_mask"],
+#             p_seqs["token_type_ids"],
+#             q_seqs["input_ids"],
+#             q_seqs["attention_mask"],
+#             q_seqs["token_type_ids"],
+#         )
+
+#     def __len__(self):
+#         return len(self.train_data)
 
 
 class ValRetrievalDataset(torch.utils.data.Dataset):
@@ -189,8 +208,9 @@ class TrainRetrievalInBatchDatasetSparseTopk(torch.utils.data.Dataset):
             context_path="wikipedia_documents.json",
         )
         retriever.get_sparse_embedding()
-        df_topk = retriever.retrieve_for_train(self.train_data, topk=num_neg * 2)
+        df_topk = retriever.retrieve_for_train(self.train_data, topk=num_neg * 3)
         self.topk_context = df_topk.context
+        self.topk_answer = df_topk.original_context
         self.in_batch_negative()
 
     def in_batch_negative(self):
@@ -199,14 +219,24 @@ class TrainRetrievalInBatchDatasetSparseTopk(torch.utils.data.Dataset):
         topk_context = self.topk_context
         p_with_neg = []
 
-        for c in train_data["context"]:
+        # for c in train_data["context"]:
+        for c_idx in range(len(train_data["context"])):
+            c = train_data["context"][c_idx]
             p_with_neg.append(c)
 
-            for p_neg in topk_context:
-                if len(p_with_neg[-1]) == num_neg + 1:
+            # randomly pick num_neg docs in topk
+            idx_list = np.random.randint(num_neg * 3, size=num_neg * 3)
+            neg_cnt = 0
+            for neg_idx in idx_list:
+
+                p_neg = topk_context[c_idx][neg_idx]
+
+                if neg_cnt == num_neg:
                     break
                 elif c != p_neg:
-                    p_with_neg.extend(p_neg)
+                    # elif not c in p_neg:
+                    p_with_neg.extend([p_neg])
+                    neg_cnt += 1
 
         self.p_with_neg = p_with_neg
 
@@ -267,7 +297,7 @@ class TrainRetrievalInBatchDatasetDenseTopk(torch.utils.data.Dataset):
         df_topk = retrieve_from_embedding(
             dataset_name, q_encoder, tokenizer_name, emb_path, num_neg * 3, context_path
         )
-
+        self.topk_answer = df_topk.original_context
         self.topk_context = df_topk.context
         self.in_batch_negative()
 
@@ -277,19 +307,24 @@ class TrainRetrievalInBatchDatasetDenseTopk(torch.utils.data.Dataset):
         topk_context = self.topk_context
         p_with_neg = []
 
-        for c in train_data["context"]:
+        for c_idx in range(len(train_data["context"])):
+            c = train_data["context"][c_idx]
             p_with_neg.append(c)
 
-            # for p_neg in topk_context:
             # randomly pick num_neg docs in topk
-            idx_list = np.random.randint(num_neg * 3, size=num_neg)
-            for i in idx_list:
-                p_neg = topk_context[i]
+            # idx_list = np.random.randint(num_neg * 3, size=num_neg * 3)
+            idx_list = list(range(num_neg * 3))
+            np.random.shuffle(idx_list)
+            neg_cnt = 0
+            for neg_idx in idx_list:
 
-                if len(p_with_neg[-1]) == num_neg + 1:
+                p_neg = topk_context[c_idx][neg_idx]
+
+                if neg_cnt == num_neg:
                     break
                 elif c != p_neg:
-                    p_with_neg.extend(p_neg)
+                    p_with_neg.extend([p_neg])
+                    neg_cnt += 1
 
         self.p_with_neg = p_with_neg
 

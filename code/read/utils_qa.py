@@ -20,17 +20,25 @@ import collections
 import json
 import logging
 import os
-from typing import Optional, Tuple, Any
+import re
+from typing import Optional, Tuple, Any, NoReturn
 
 import numpy as np
 from tqdm.auto import tqdm
+import pandas as pd
 
 import torch
 import random
-from transformers import is_torch_available, PreTrainedTokenizerFast, TrainingArguments
+from transformers import (
+    is_torch_available,
+    PreTrainedTokenizerFast,
+    TrainingArguments,
+    EvalPrediction,
+    set_seed as set_tf_seed,
+)
 from transformers.trainer_utils import get_last_checkpoint
 
-from datasets import DatasetDict
+from datasets import Dataset, DatasetDict, load_metric, load_from_disk
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -38,6 +46,109 @@ from arguments import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def compute_metrics(metric, p: EvalPrediction):
+    result = metric.compute(predictions=p.predictions, references=p.label_ids)
+
+    """
+    {"exact_match: socre, "f1 score": score}
+    """
+    return {"eval_exact_match": result["exact_match"], "eval_f1": result["f1"]}
+    # return metric.compute(predictions=p.predictions, references=p.label_ids)
+
+
+# context 전처리 함수
+def preprocess(text):
+    text = re.sub(r"\n", " ", text)
+    text = re.sub(r"\\n", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"#", " ", text)
+    text = re.sub(
+        r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥<>()\s\.\?!》《≪≫\'<>〈〉:‘’%,『』「」＜＞・\"-“”∧]",
+        "",
+        text,
+    )
+    return text
+
+
+# 전처리된 context가 적용된 train dataset을 저장 및 반환하는 함수.
+def get_preprocess_dataset(data_path: str = "/opt/ml/data/") -> DatasetDict:
+    path = f"{data_path}pre_train_dataset"
+    if os.path.isdir(path):
+        return load_from_disk(path)
+    else:
+        train_dataset = load_from_disk(f"{data_path}train_dataset")
+        t_train = train_dataset["train"]
+        t_val = train_dataset["validation"]
+        tmp_dict_val = []
+        tmp_dict_train = []
+
+        for datum in t_train:
+            answer_start = datum["answers"]["answer_start"][0]
+            context = datum["context"]
+            pre_bef_cont = preprocess(context[:answer_start])
+            pre_aft_cont = preprocess(context[answer_start:])
+            context = pre_bef_cont + pre_aft_cont
+            answer_start = len(pre_bef_cont)
+            datum["context"] = context
+            datum["answers"]["answer_start"][0] = answer_start
+            tmp_dict_train.append(datum)
+
+        for datum in t_val:
+            answer_start = datum["answers"]["answer_start"][0]
+            context = datum["context"]
+            pre_bef_cont = preprocess(context[:answer_start])
+            pre_aft_cont = preprocess(context[answer_start:])
+            context = pre_bef_cont + pre_aft_cont
+            answer_start = len(pre_bef_cont)
+            datum["context"] = context
+            datum["answers"]["answer_start"][0] = answer_start
+            tmp_dict_val.append(datum)
+
+        tmp_total_dt = DatasetDict(
+            {
+                "train": Dataset.from_pandas(pd.DataFrame(tmp_dict_train)),
+                "validation": Dataset.from_pandas(pd.DataFrame(tmp_dict_val)),
+            }
+        )
+        tmp_total_dt.save_to_disk(path)
+        return tmp_total_dt
+
+
+def get_preprocess_wiki(data_path: str = "/opt/ml/data/"):
+    dataset_path = f"{data_path}wikipedia_documents.json"
+    pre_dataset_path = f"{data_path}preprocess_wikipedia_documents.json"
+
+    if not os.path.isfile(pre_dataset_path):
+        print("=" * 50)
+        print("preprocessing wikipedia documents not exist!")
+        print()
+        print("preprocessing wikipedia...")
+
+        with open(dataset_path, "r") as f:
+            wiki = json.load(f)
+
+        new_wiki = dict()
+        for ids in tqdm(range(len(wiki))):
+            wiki[str(ids)]["text"] = preprocess(wiki[str(ids)]["text"])
+            new_wiki[str(ids)] = wiki[str(ids)]
+        with open(
+            f"{data_path}preprocess_wikipedia_documents.json", "w", encoding="utf-8"
+        ) as make_file:
+            json.dump(new_wiki, make_file, indent="\t", ensure_ascii=False)
+        print("done!")
+        print("=" * 50)
+
+    print("loading wiki")
+    with open(pre_dataset_path, "r") as f:
+        wiki = json.load(f)
+    wiki_contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
+
+    wiki_articles = [
+        {"document_text": wiki_contexts[i]} for i in range(len(wiki_contexts))
+    ]
+    return wiki_articles
 
 
 def set_seed(seed: int = 42):

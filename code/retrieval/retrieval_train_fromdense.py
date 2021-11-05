@@ -17,9 +17,10 @@ from retrieval_dataset import (
     ValRetrievalDataset,
     TrainRetrievalInBatchDataset,
     TrainRetrievalInBatchDatasetSparseTopk,
+    TrainRetrievalInBatchDatasetDenseTopk,
     WikiDataset,
 )
-from retrieval_model import BertEncoder, RobertaEncoder
+from retrieval_model import BertEncoder
 
 from transformers import (
     AdamW,
@@ -55,7 +56,6 @@ class DenseRetrieval:
 
         wiki_data_list = WikiDataset(self.args.context_path, self.args.tokenizer_name)
 
-        # emb_path = self.args.save_pickle_path
         p_encoder = self.p_encoder
         p_embs = []
         with torch.no_grad():
@@ -145,20 +145,21 @@ class DenseRetrieval:
         q_encoder.zero_grad()
         torch.cuda.empty_cache()
 
+        ## get negative samples from wiki for first epoch
+        train_dataset = TrainRetrievalInBatchDataset(
+            self.args.tokenizer_name,
+            self.args.dataset_name,
+            num_neg,
+            self.args.context_path,
+        )
+        train_dataloader = DataLoader(
+            train_dataset, shuffle=True, batch_size=batch_size
+        )
+
         for _ in tqdm(range(int(model_args.num_train_epochs)), desc="Epoch"):
 
             epoch += 1
-            ## get negative samples with every epoch
-            train_dataset = TrainRetrievalInBatchDataset(
-                # train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
-                self.args.tokenizer_name,
-                self.args.dataset_name,
-                num_neg,
-                self.args.context_path,
-            )
-            train_dataloader = DataLoader(
-                train_dataset, shuffle=True, batch_size=batch_size
-            )
+
             with tqdm(train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
                     p_encoder.train()
@@ -242,12 +243,35 @@ class DenseRetrieval:
 
                     # if global_step % 50 == 0:
                     #    self.eval(p_encoder, q_encoder, global_step)
+
             if epoch % args.save_epoch == 0:
                 p_encoder.save_pretrained(
                     save_directory=args.save_path_p + "_" + str(epoch)
                 )
                 q_encoder.save_pretrained(
                     save_directory=args.save_path_q + "_" + str(epoch)
+                )
+
+            if epoch != args.num_train_epochs:
+
+                ## get negative samples from dense top k
+                save_pickle_path_full = (
+                    self.args.save_pickle_path + "_epoch_" + str(epoch) + ".bin"
+                )
+                self.save_embedding(save_pickle_path_full)
+
+                del train_dataset
+                train_dataset = TrainRetrievalInBatchDatasetDenseTopk(
+                    self.args.tokenizer_name,
+                    self.args.dataset_name,
+                    num_neg,
+                    self.args.context_path,
+                    self.q_encoder,
+                    save_pickle_path_full,
+                )
+
+                train_dataloader = DataLoader(
+                    train_dataset, shuffle=True, batch_size=batch_size
                 )
 
     def eval(self, p_encoder, q_encoder, global_step):
@@ -362,12 +386,9 @@ if __name__ == "__main__":
     p_encoder = BertEncoder.from_pretrained(args.p_enc_name_or_path).cuda()
     q_encoder = BertEncoder.from_pretrained(args.q_enc_name_or_path).cuda()
 
-    # p_encoder = RobertaEncoder.from_pretrained(args.p_enc_name_or_path).cuda()
-    # q_encoder = RobertaEncoder.from_pretrained(args.q_enc_name_or_path).cuda()
-
     # 이후 arg 뺄 수 있으면 빼기
     model_args = TrainingArguments(
-        output_dir="dense_retrieval",
+        output_dir="dense_retireval",
         evaluation_strategy="epoch",
         learning_rate=args.learning_rate,
         per_device_train_batch_size=args.train_batch,
@@ -405,5 +426,5 @@ if __name__ == "__main__":
         p_encoder,
         q_encoder,
     )
-    # retriever.train()
+    retriever.train()
     retriever.save_embedding(args.save_pickle_path + ".bin")

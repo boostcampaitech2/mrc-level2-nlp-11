@@ -145,20 +145,18 @@ class DenseRetrieval:
         q_encoder.zero_grad()
         torch.cuda.empty_cache()
 
+        # get in-batch dataset
+        train_dataset = TrainRetrievalDataset(
+            self.args.tokenizer_name,
+            self.args.dataset_name,
+        )
+        train_dataloader = DataLoader(
+            train_dataset, shuffle=True, batch_size=batch_size, drop_last=True
+        )
+
         for _ in tqdm(range(int(model_args.num_train_epochs)), desc="Epoch"):
 
             epoch += 1
-            ## get negative samples with every epoch
-            train_dataset = TrainRetrievalInBatchDataset(
-                # train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
-                self.args.tokenizer_name,
-                self.args.dataset_name,
-                num_neg,
-                self.args.context_path,
-            )
-            train_dataloader = DataLoader(
-                train_dataset, shuffle=True, batch_size=batch_size
-            )
             with tqdm(train_dataloader, unit="batch") as tepoch:
                 for batch in tepoch:
                     p_encoder.train()
@@ -166,44 +164,30 @@ class DenseRetrieval:
 
                     global_step += 1
 
-                    targets = torch.zeros(batch_size).long()
+                    targets = torch.arange(batch_size).long()
                     targets = targets.to(model_args.device)
-                    p_inputs = {
-                        "input_ids": batch[0]
-                        .view(batch_size * (num_neg + 1), -1)
-                        .to(model_args.device),
-                        "attention_mask": batch[1]
-                        .view(batch_size * (num_neg + 1), -1)
-                        .to(model_args.device),
-                        "token_type_ids": batch[2]
-                        .view(batch_size * (num_neg + 1), -1)
-                        .to(model_args.device),
-                    }
 
+                    p_inputs = {
+                        "input_ids": batch[0].to(model_args.device),
+                        "attention_mask": batch[1].to(model_args.device),
+                        "token_type_ids": batch[2].to(model_args.device),
+                    }
                     q_inputs = {
-                        "input_ids": batch[3]
-                        .view(batch_size, -1)
-                        .to(model_args.device),
-                        "attention_mask": batch[4]
-                        .view(batch_size, -1)
-                        .to(model_args.device),
-                        "token_type_ids": batch[5]
-                        .view(batch_size, -1)
-                        .to(model_args.device),
+                        "input_ids": batch[3].to(model_args.device),
+                        "attention_mask": batch[4].to(model_args.device),
+                        "token_type_ids": batch[5].to(model_args.device),
                     }
 
                     p_outputs = p_encoder(**p_inputs)
                     q_outputs = q_encoder(**q_inputs)
 
-                    p_outputs = torch.transpose(
-                        p_outputs.view(batch_size, num_neg + 1, -1), 1, 2
+                    sim_scores = torch.matmul(
+                        q_outputs, torch.transpose(p_outputs, 0, 1)
                     )
-                    q_outputs = q_outputs.view(batch_size, 1, -1)
-
-                    sim_scores = torch.bmm(q_outputs, p_outputs).squeeze()
-                    sim_scores = sim_scores.view(batch_size, -1)
+                    # print(sim_scores.size())
+                    # print(targets.size())
                     sim_scores = F.log_softmax(sim_scores, dim=1)
-
+                    # print(sim_scores.size())
                     loss = F.nll_loss(sim_scores, targets)
                     tepoch.set_postfix(loss=f"{str(loss.item())}")
 
@@ -248,6 +232,9 @@ class DenseRetrieval:
                 )
                 q_encoder.save_pretrained(
                     save_directory=args.save_path_q + "_" + str(epoch)
+                )
+                retriever.save_embedding(
+                    args.save_pickle_path + "_" + str(epoch) + ".bin"
                 )
 
     def eval(self, p_encoder, q_encoder, global_step):
@@ -405,5 +392,5 @@ if __name__ == "__main__":
         p_encoder,
         q_encoder,
     )
-    # retriever.train()
-    retriever.save_embedding(args.save_pickle_path + ".bin")
+    retriever.train()
+    # retriever.save_embedding(args.save_pickle_path + ".bin")
