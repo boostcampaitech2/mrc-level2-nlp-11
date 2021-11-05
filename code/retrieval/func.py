@@ -9,6 +9,8 @@ from tqdm.auto import tqdm
 
 from transformers import AutoTokenizer
 
+import torch.nn.functional as F
+
 
 def retrieve_from_embedding(
     dataset_path, q_encoder, tokenizer_name, emb_path: str, topk: int, context_path: str
@@ -96,3 +98,57 @@ def retrieval_acc(df, topk):
     accuracy = (df["correct"].sum() / len(df),)
 
     return accuracy
+
+
+def inbatch_input(batch, batch_size, device):
+    targets = torch.arange(batch_size).long()
+    targets = targets.to(device)
+
+    p_inputs = {
+        "input_ids": batch[0].to(device),
+        "attention_mask": batch[1].to(device),
+        "token_type_ids": batch[2].to(device),
+    }
+    q_inputs = {
+        "input_ids": batch[3].to(device),
+        "attention_mask": batch[4].to(device),
+        "token_type_ids": batch[5].to(device),
+    }
+
+    return q_inputs, p_inputs, targets
+
+
+def inbatch_sim_scores(q_outputs, p_outputs):
+    sim_scores = torch.matmul(q_outputs, torch.transpose(p_outputs, 0, 1))
+    sim_scores = F.log_softmax(sim_scores, dim=1)
+
+    return sim_scores
+
+
+def neg_sample_input(batch, batch_size, device, num_neg):
+    targets = torch.zeros(batch_size).long()
+    targets = targets.to(device)
+    p_inputs = {
+        "input_ids": batch[0].view(batch_size * (num_neg + 1), -1).to(device),
+        "attention_mask": batch[1].view(batch_size * (num_neg + 1), -1).to(device),
+        "token_type_ids": batch[2].view(batch_size * (num_neg + 1), -1).to(device),
+    }
+
+    q_inputs = {
+        "input_ids": batch[3].view(batch_size, -1).to(device),
+        "attention_mask": batch[4].view(batch_size, -1).to(device),
+        "token_type_ids": batch[5].view(batch_size, -1).to(device),
+    }
+    return q_inputs, p_inputs, targets
+
+
+def neg_sample_sim_scores(q_outputs, p_outputs, batch_size, num_neg):
+    p_outputs = torch.transpose(p_outputs.view(batch_size, num_neg + 1, -1), 1, 2)
+
+    q_outputs = q_outputs.view(batch_size, 1, -1)
+    sim_scores = torch.bmm(q_outputs, p_outputs).squeeze()
+    sim_scores = sim_scores.view(batch_size, -1)
+
+    sim_scores = F.log_softmax(sim_scores, dim=1)
+
+    return sim_scores

@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from retrieval_dataset import (
     TrainRetrievalDataset,
     ValRetrievalDataset,
-    TrainRetrievalInBatchDataset,
+    TrainRetrievalRandomDataset,
     TrainRetrievalInBatchDatasetSparseTopk,
     TrainRetrievalInBatchDatasetDenseTopk,
     WikiDataset,
@@ -29,7 +29,8 @@ from transformers import (
     set_seed,
 )
 
-from func import retrieve_from_embedding, retrieval_acc
+# from func import retrieve_from_embedding, retrieval_acc
+from func import neg_sample_input, neg_sample_sim_scores
 
 
 class DenseRetrieval:
@@ -37,16 +38,13 @@ class DenseRetrieval:
         self,
         args,
         model_args,
-        # train_dataset,
-        val_dataset,
         num_neg,
         p_encoder,
         q_encoder,
     ) -> None:
         self.args = args
         self.model_args = model_args
-        # self.train_dataset = train_dataset
-        self.val_dataset = val_dataset
+
         self.num_neg = num_neg
         self.p_encoder = p_encoder
         self.q_encoder = q_encoder
@@ -145,16 +143,27 @@ class DenseRetrieval:
         q_encoder.zero_grad()
         torch.cuda.empty_cache()
 
+        # get in-batch dataset
+        if self.args.in_batch:
+            train_dataset = TrainRetrievalDataset(
+                self.args.tokenizer_name,
+                self.args.dataset_name,
+            )
+            train_dataloader = DataLoader(
+                train_dataset, shuffle=True, batch_size=batch_size, drop_last=True
+            )
+
         ## get negative samples from wiki for first epoch
-        train_dataset = TrainRetrievalInBatchDataset(
-            self.args.tokenizer_name,
-            self.args.dataset_name,
-            num_neg,
-            self.args.context_path,
-        )
-        train_dataloader = DataLoader(
-            train_dataset, shuffle=True, batch_size=batch_size
-        )
+        else:
+            train_dataset = TrainRetrievalRandomDataset(
+                self.args.tokenizer_name,
+                self.args.dataset_name,
+                num_neg,
+                self.args.context_path,
+            )
+            train_dataloader = DataLoader(
+                train_dataset, shuffle=True, batch_size=batch_size
+            )
 
         for _ in tqdm(range(int(model_args.num_train_epochs)), desc="Epoch"):
 
@@ -167,43 +176,16 @@ class DenseRetrieval:
 
                     global_step += 1
 
-                    targets = torch.zeros(batch_size).long()
-                    targets = targets.to(model_args.device)
-                    p_inputs = {
-                        "input_ids": batch[0]
-                        .view(batch_size * (num_neg + 1), -1)
-                        .to(model_args.device),
-                        "attention_mask": batch[1]
-                        .view(batch_size * (num_neg + 1), -1)
-                        .to(model_args.device),
-                        "token_type_ids": batch[2]
-                        .view(batch_size * (num_neg + 1), -1)
-                        .to(model_args.device),
-                    }
-
-                    q_inputs = {
-                        "input_ids": batch[3]
-                        .view(batch_size, -1)
-                        .to(model_args.device),
-                        "attention_mask": batch[4]
-                        .view(batch_size, -1)
-                        .to(model_args.device),
-                        "token_type_ids": batch[5]
-                        .view(batch_size, -1)
-                        .to(model_args.device),
-                    }
+                    q_inputs, p_inputs, targets = neg_sample_input(
+                        batch, batch_size, model_args.device, num_neg
+                    )
 
                     p_outputs = p_encoder(**p_inputs)
                     q_outputs = q_encoder(**q_inputs)
 
-                    p_outputs = torch.transpose(
-                        p_outputs.view(batch_size, num_neg + 1, -1), 1, 2
+                    sim_scores = neg_sample_sim_scores(
+                        q_outputs, p_outputs, batch_size, num_neg
                     )
-                    q_outputs = q_outputs.view(batch_size, 1, -1)
-
-                    sim_scores = torch.bmm(q_outputs, p_outputs).squeeze()
-                    sim_scores = sim_scores.view(batch_size, -1)
-                    sim_scores = F.log_softmax(sim_scores, dim=1)
 
                     loss = F.nll_loss(sim_scores, targets)
                     tepoch.set_postfix(loss=f"{str(loss.item())}")
@@ -219,30 +201,7 @@ class DenseRetrieval:
 
                     del p_inputs, q_inputs
                     if global_step % args.log_step == 0:
-
-                        # validation accuracy
-
-                        # save_pickle_path_full = (
-                        #     self.args.save_pickle_path + "_" + str(global_step) + ".bin"
-                        # )
-                        # self.save_embedding(save_pickle_path_full)
-                        # df_topk = retrieve_from_embedding(
-                        #     self.args.dataset_name,
-                        #     self.q_encoder,
-                        #     self.args.tokenizer_name,
-                        #     save_pickle_path_full,
-                        #     self.args.num_neg + 1,
-                        #     self.args.context_path,
-                        # )
-
-                        # val_acc = retrieval_acc(df_topk, self.args.num_neg + 1)
-                        # wandb.log({"loss": loss, "val_acc": val_acc}, step=global_step)
-                        # del df_topk
-
                         wandb.log({"loss": loss}, step=global_step)
-
-                    # if global_step % 50 == 0:
-                    #    self.eval(p_encoder, q_encoder, global_step)
 
             if epoch % args.save_epoch == 0:
                 p_encoder.save_pretrained(
@@ -252,7 +211,7 @@ class DenseRetrieval:
                     save_directory=args.save_path_q + "_" + str(epoch)
                 )
 
-            if epoch != args.num_train_epochs:
+            if not in_batch and epoch != args.num_train_epochs:
 
                 ## get negative samples from dense top k
                 save_pickle_path_full = (
@@ -261,7 +220,7 @@ class DenseRetrieval:
                 self.save_embedding(save_pickle_path_full)
 
                 del train_dataset
-                train_dataset = TrainRetrievalInBatchDatasetDenseTopk(
+                train_dataset = TrainRetrievalRandomDatasetDenseTopk(
                     self.args.tokenizer_name,
                     self.args.dataset_name,
                     num_neg,
@@ -273,35 +232,6 @@ class DenseRetrieval:
                 train_dataloader = DataLoader(
                     train_dataset, shuffle=True, batch_size=batch_size
                 )
-
-    def eval(self, p_encoder, q_encoder, global_step):
-        val_dataset = self.val_dataset
-        p_encoder.eval()
-        q_encoder.eval()
-
-        val_dataloader = DataLoader(val_dataset, shuffle=True, batch_size=1)
-
-        with torch.no_grad():
-            for idx, batch in enumerate(val_dataloader):  # 데이터 셋 class
-                if torch.cuda.is_available():
-                    batch = tuple(t.cuda() for t in batch)
-                p_inputs = {
-                    "input_ids": batch[0].view(1, -1),
-                    "attention_mask": batch[1].view(1, -1),
-                    "token_type_ids": batch[2].view(1, -1),
-                }
-                q_inputs = {
-                    "input_ids": batch[3].view(1, -1),
-                    "attention_mask": batch[4].view(1, -1),
-                    "token_type_ids": batch[5].view(1, -1),
-                }
-
-                p_outputs = p_encoder(**p_inputs)
-                q_outputs = q_encoder(**q_inputs)
-
-                sim_scores = torch.matmul(q_outputs, torch.transpose(p_outputs, 0, 1))
-
-            wandb.log({"Eval sim_scores": sim_scores[0]}, step=global_step)
 
 
 if __name__ == "__main__":
@@ -376,6 +306,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--log_step", default=100, type=int, help="log loss to wandb per step"
     )
+    parser.add_argument(
+        "--in_batch", default=False, type=bool, help="log loss to wandb per step"
+    )
     args = parser.parse_args()
 
     torch.manual_seed(args.random_seed)
@@ -400,28 +333,13 @@ if __name__ == "__main__":
     wandb.init(entity="ai_esg", name=args.run_name)
     wandb.config.update(model_args)
 
-    # train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
-    #     args.tokenizer_name,
-    #     args.dataset_name,
-    #     args.num_neg,
-    #     args.context_path,
-    # )
-
     validation_dataset = ValRetrievalDataset(args.tokenizer_name, args.dataset_name)
-    # retriever = DenseRetrieval(
-    #     args,
-    #     model_args,
-    #     train_dataset,
-    #     validation_dataset,
-    #     args.num_neg,
-    #     p_encoder,
-    #     q_encoder,
-    # )
+
     retriever = DenseRetrieval(
         args,
         model_args,
         # train_dataset,
-        validation_dataset,
+        # validation_dataset,
         args.num_neg,
         p_encoder,
         q_encoder,

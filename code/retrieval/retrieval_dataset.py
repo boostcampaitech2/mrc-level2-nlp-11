@@ -372,7 +372,7 @@ class TrainRetrievalInBatchDatasetDenseTopk(torch.utils.data.Dataset):
         return len(self.train_data)
 
 
-class TrainRetrievalInBatchDataset(torch.utils.data.Dataset):
+class TrainRetrievalRandomDataset(torch.utils.data.Dataset):
     def __init__(self, tokenizer_name, dataset_name, num_neg, context_path):
         org_dataset = load_from_disk(dataset_name)
         self.train_data = org_dataset["train"]

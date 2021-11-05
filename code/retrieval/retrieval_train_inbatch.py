@@ -15,8 +15,7 @@ import torch.nn.functional as F
 from retrieval_dataset import (
     TrainRetrievalDataset,
     ValRetrievalDataset,
-    TrainRetrievalInBatchDataset,
-    TrainRetrievalInBatchDatasetSparseTopk,
+    TrainRetrievalRandomDataset,
     WikiDataset,
 )
 from retrieval_model import BertEncoder, RobertaEncoder
@@ -28,7 +27,8 @@ from transformers import (
     set_seed,
 )
 
-from func import retrieve_from_embedding, retrieval_acc
+# from func import retrieve_from_embedding, retrieval_acc
+from func import inbatch_input, inbatch_sim_scores
 
 
 class DenseRetrieval:
@@ -36,7 +36,6 @@ class DenseRetrieval:
         self,
         args,
         model_args,
-        # train_dataset,
         val_dataset,
         num_neg,
         p_encoder,
@@ -44,7 +43,6 @@ class DenseRetrieval:
     ) -> None:
         self.args = args
         self.model_args = model_args
-        # self.train_dataset = train_dataset
         self.val_dataset = val_dataset
         self.num_neg = num_neg
         self.p_encoder = p_encoder
@@ -81,7 +79,6 @@ class DenseRetrieval:
         p_encoder = self.p_encoder
         q_encoder = self.q_encoder
         num_neg = self.num_neg
-        # train_dataset = self.train_dataset
         batch_size = model_args.per_device_train_batch_size
 
         no_decay = ["bias", "LayerNorm.weight"]
@@ -164,30 +161,15 @@ class DenseRetrieval:
 
                     global_step += 1
 
-                    targets = torch.arange(batch_size).long()
-                    targets = targets.to(model_args.device)
-
-                    p_inputs = {
-                        "input_ids": batch[0].to(model_args.device),
-                        "attention_mask": batch[1].to(model_args.device),
-                        "token_type_ids": batch[2].to(model_args.device),
-                    }
-                    q_inputs = {
-                        "input_ids": batch[3].to(model_args.device),
-                        "attention_mask": batch[4].to(model_args.device),
-                        "token_type_ids": batch[5].to(model_args.device),
-                    }
+                    q_inputs, p_inputs, targets = inbatch_input(
+                        batch, batch_size, model_args.device
+                    )
 
                     p_outputs = p_encoder(**p_inputs)
                     q_outputs = q_encoder(**q_inputs)
 
-                    sim_scores = torch.matmul(
-                        q_outputs, torch.transpose(p_outputs, 0, 1)
-                    )
-                    # print(sim_scores.size())
-                    # print(targets.size())
-                    sim_scores = F.log_softmax(sim_scores, dim=1)
-                    # print(sim_scores.size())
+                    sim_scores = inbatch_sim_scores(q_outputs, p_outputs)
+
                     loss = F.nll_loss(sim_scores, targets)
                     tepoch.set_postfix(loss=f"{str(loss.item())}")
 
@@ -203,29 +185,8 @@ class DenseRetrieval:
                     del p_inputs, q_inputs
                     if global_step % args.log_step == 0:
 
-                        # validation accuracy
-
-                        # save_pickle_path_full = (
-                        #     self.args.save_pickle_path + "_" + str(global_step) + ".bin"
-                        # )
-                        # self.save_embedding(save_pickle_path_full)
-                        # df_topk = retrieve_from_embedding(
-                        #     self.args.dataset_name,
-                        #     self.q_encoder,
-                        #     self.args.tokenizer_name,
-                        #     save_pickle_path_full,
-                        #     self.args.num_neg + 1,
-                        #     self.args.context_path,
-                        # )
-
-                        # val_acc = retrieval_acc(df_topk, self.args.num_neg + 1)
-                        # wandb.log({"loss": loss, "val_acc": val_acc}, step=global_step)
-                        # del df_topk
-
                         wandb.log({"loss": loss}, step=global_step)
 
-                    # if global_step % 50 == 0:
-                    #    self.eval(p_encoder, q_encoder, global_step)
             if epoch % args.save_epoch == 0:
                 p_encoder.save_pretrained(
                     save_directory=args.save_path_p + "_" + str(epoch)
@@ -236,35 +197,6 @@ class DenseRetrieval:
                 retriever.save_embedding(
                     args.save_pickle_path + "_" + str(epoch) + ".bin"
                 )
-
-    def eval(self, p_encoder, q_encoder, global_step):
-        val_dataset = self.val_dataset
-        p_encoder.eval()
-        q_encoder.eval()
-
-        val_dataloader = DataLoader(val_dataset, shuffle=True, batch_size=1)
-
-        with torch.no_grad():
-            for idx, batch in enumerate(val_dataloader):  # 데이터 셋 class
-                if torch.cuda.is_available():
-                    batch = tuple(t.cuda() for t in batch)
-                p_inputs = {
-                    "input_ids": batch[0].view(1, -1),
-                    "attention_mask": batch[1].view(1, -1),
-                    "token_type_ids": batch[2].view(1, -1),
-                }
-                q_inputs = {
-                    "input_ids": batch[3].view(1, -1),
-                    "attention_mask": batch[4].view(1, -1),
-                    "token_type_ids": batch[5].view(1, -1),
-                }
-
-                p_outputs = p_encoder(**p_inputs)
-                q_outputs = q_encoder(**q_inputs)
-
-                sim_scores = torch.matmul(q_outputs, torch.transpose(p_outputs, 0, 1))
-
-            wandb.log({"Eval sim_scores": sim_scores[0]}, step=global_step)
 
 
 if __name__ == "__main__":
@@ -366,23 +298,8 @@ if __name__ == "__main__":
     wandb.init(entity="ai_esg", name=args.run_name)
     wandb.config.update(model_args)
 
-    # train_dataset = TrainRetrievalInBatchDatasetSparseTopk(
-    #     args.tokenizer_name,
-    #     args.dataset_name,
-    #     args.num_neg,
-    #     args.context_path,
-    # )
-
     validation_dataset = ValRetrievalDataset(args.tokenizer_name, args.dataset_name)
-    # retriever = DenseRetrieval(
-    #     args,
-    #     model_args,
-    #     train_dataset,
-    #     validation_dataset,
-    #     args.num_neg,
-    #     p_encoder,
-    #     q_encoder,
-    # )
+
     retriever = DenseRetrieval(
         args,
         model_args,
