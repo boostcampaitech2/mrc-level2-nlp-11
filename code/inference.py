@@ -20,7 +20,7 @@ from datasets import (
     DatasetDict,
 )
 
-from transformers import (AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer)
+from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
 
 from transformers import (
     DataCollatorWithPadding,
@@ -32,10 +32,13 @@ from transformers import (
 
 from read.utils_qa import *
 from read.trainer_qa import QuestionAnsweringTrainer
-from retrieval import SparseRetrieval
-from retrieval_model import BertEncoder
-from retrieval_inference import RetrievalInference
-from retrieval_dataset import WikiDataset
+
+from retrieval.retrieval import SparseRetrieval
+from retrieval.elastic_search import ElasticSearch
+from retrieval.bm25 import *
+from retrieval.retrieval_model import BertEncoder
+from retrieval.retrieval_inference import RetrievalInference
+from retrieval.retrieval_dataset import WikiDataset
 from retrieval.elastic_search import ElasticSearch
 
 
@@ -86,27 +89,32 @@ def main():
     #     else model_args.model_name_or_path,
     # )
     tokenizer = AutoTokenizer.from_pretrained(
-        "klue/roberta-large"
-    #     if model_args.tokenizer_name
-    #     else model_args.model_name_or_path,
-    #     use_fast=True,
+        model_args.tokenizer_name
+        #     if model_args.tokenizer_name
+        #     else model_args.model_name_or_path,
+        #     use_fast=True,
     )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path
-    )
+    model = AutoModelForQuestionAnswering.from_pretrained(model_args.model_name_or_path)
     es = ElasticSearch()
 
     # True일 경우 : run passage retrieval
     if data_args.eval_retrieval:
-        # datasets = run_sparse_retrieval(
-        #     tokenizer.tokenize,
-        #     datasets,
-        #     training_args,
-        #     data_args,
-        # )
-        k = 5
-        datasets = es.run_retrieval(datasets["validation"], k)
-        
+        if model_args.retrieval_name == "elastic":
+            es = ElasticSearch()
+            datasets = es.run_retrieval(
+                datasets["validation"], data_args.top_k_retrieval
+            )
+        elif (model_args.retrieval_name == "BM25") or (
+            model_args.retrieval_name == "TFIDF"
+        ):
+            datasets = run_sparse_retrieval(
+                tokenizer.tokenize,
+                datasets,
+                training_args,
+                data_args,
+                sparse_type=model_args.retrieval_name,
+            )
+
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
@@ -137,13 +145,19 @@ def run_sparse_retrieval(
     training_args: TrainingArguments,
     data_args: DataTrainingArguments,
     data_path: str = "../data",
-    context_path: str = "wikipedia_documents.json",
+    context_path: str = "preprocess_wikipedia_documents.json",
+    sparse_type: str = "BM25",
 ) -> DatasetDict:
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
-    retriever = SparseRetrieval(
-        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
-    )
+    if sparse_type == "BM25":
+        retriever = BM25Retrieval(
+            tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+        )
+    else:
+        retriever = SparseRetrieval(
+            tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
+        )
     retriever.get_sparse_embedding()
 
     if data_args.use_faiss:
@@ -165,6 +179,7 @@ def run_sparse_retrieval(
         )
     datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
     return datasets
+
 
 def run_mrc(
     data_args: DataTrainingArguments,

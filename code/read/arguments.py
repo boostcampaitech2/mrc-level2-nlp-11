@@ -54,7 +54,7 @@ class DataTrainingArguments:
         },
     )
     pad_to_max_length: bool = field(
-        default=True,
+        default=False,
         metadata={
             "help": "Whether to pad all samples to `max_seq_length`. "
             "If False, will pad the samples dynamically when batching to the maximum length in the batch (which can "
@@ -91,7 +91,7 @@ class DataTrainingArguments:
         default=False, metadata={"help": "Whether to build with faiss"}
     )
     use_preprocess: bool = field(
-        default=False, metadata={"help": "apply preprocessing traindataset"}
+        default=True, metadata={"help": "apply preprocessing traindataset"}
     )
 
 
