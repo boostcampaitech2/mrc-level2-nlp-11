@@ -9,26 +9,22 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        default="klue/bert-base",
+        default="pre_klue/bert-base",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
     config_name: Optional[str] = field(
-        default="klue/roberta-large",
+        default=None,
         metadata={
             "help": "Pretrained config name or path if not the same as model_name"
         },
     )
     tokenizer_name: Optional[str] = field(
-        default="klue/roberta-large",
+        default=None,
         metadata={
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
-    )
-    retrieval_name: str = field(
-        default="elastic",
-        metadata={"help": "retrieval type : elastic, BM25, dense, TFIDF"},
     )
 
 
@@ -39,7 +35,7 @@ class DataTrainingArguments:
     """
 
     dataset_name: Optional[str] = field(
-        default="../data/test_dataset",
+        default="../../data/train_dataset",
         metadata={"help": "The name of the dataset to use."},
     )
     overwrite_cache: bool = field(
@@ -86,7 +82,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=5,
+        default=1,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
@@ -94,6 +90,38 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
-    pickle_path: str = field(
-        default="./", metadata={"help": "dense retrieval pickle path"}
+    use_preprocess: bool = field(
+        default=True, metadata={"help": "apply preprocessing traindataset"}
+    )
+
+
+@dataclass
+class TrainerArguments:
+    output_dir: str = field(
+        default="saved_checkpoint",
+        metadata={"help": "The name of directory where the checkpoints are saved"},
+    )
+    lr: float = field(default=1e-5, metadata={"help": "The value of Learning-rate"})
+    train_batch_size: int = field(
+        default=4, metadata={"help": "The batch size of train data"}
+    )
+    eval_batch_size: int = field(
+        default=4, metadata={"help": "The batch size of evaluation data"}
+    )
+    epochs: int = field(default=5, metadata={"help": "The number of epochs"})
+
+    logging_steps: int = field(
+        default=500, metadata={"help": "The number of steps for logging"}
+    )
+    run_name: str = field(
+        default="Reader-bert_base", metadata={"help": "The run name of wandb"}
+    )
+    save_steps: int = field(
+        default=500, metadata={"help": "The number of steps for saving"}
+    )
+    eval_steps: int = field(
+        default=500, metadata={"help": "The nuber of steps for evaluation"}
+    )
+    best_model_dir: str = field(
+        default="./best_model", metadata={"help": "The directory for best model"}
     )
