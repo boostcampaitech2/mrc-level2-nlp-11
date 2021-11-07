@@ -7,7 +7,7 @@ from tqdm.auto import tqdm
 import pandas as pd
 import argparse
 from sklearn.feature_extraction.text import TfidfVectorizer
-from typing import List, Tuple, NoReturn, Any, Optional, Union
+from typing import List, Tuple, NoReturn, Optional, Union
 from datasets import (
     Dataset,
     load_from_disk,
@@ -40,8 +40,7 @@ class BM25Retrieval:
 
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
-        # self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
-        # BM25 단독으로 사용하시는 경우, title을 추가해주시면 성능이 더 올라갑니다.
+
         self.contexts = list(
             dict.fromkeys([v["title"] + ": " + v["text"] for v in wiki.values()])
         )
@@ -71,7 +70,6 @@ class BM25Retrieval:
             self.avdl,
         )
         len_p = self.dls
-
         p_emb_for_q = p_embedding[:, query_vec.indices]
         denom = p_emb_for_q + (k1 * (1 - b + b * len_p / avdl))[:, None]
         idf = self.idf[None, query_vec.indices] - 1.0
@@ -189,8 +187,6 @@ class BM25Retrieval:
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
 
         else:
-            # elif isinstance(query_or_dataset, Dataset):
-
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             print("-----Retrieve Start-----")
@@ -266,13 +262,14 @@ if __name__ == "__main__":
             org_dataset["train"].flatten_indices(),
             org_dataset["validation"].flatten_indices(),
         ]
-    )  # train dev 를 합친 4192 개 질문에 대해 모두 테스트
-    print("*" * 40, "query dataset", "*" * 40)
+    )
+    print("*" * 40, "query dataset loaded", "*" * 40)
 
     retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize, is_retrain=args.retrain)
 
     retriever.get_sparse_embedding()
 
+    # top-200 에 대해 몇번째에서 맞추는지 테스트
     df = retriever.retrieve(org_dataset["train"], topk=200)
     count = 0
     cnt = [0 for _ in range(201)]
@@ -289,5 +286,5 @@ if __name__ == "__main__":
 
     print(
         "correct retrieval result by exhaustive search",
-        count / len(df),  # acc
+        count / len(df),
     )
