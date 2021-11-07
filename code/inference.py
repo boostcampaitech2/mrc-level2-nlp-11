@@ -6,9 +6,6 @@ from arguments import (
     ModelArguments,
     DataTrainingArguments,
 )
-from retrieval.retrieval_dataset import WikiDataset
-from retrieval.retrieval_inference import RetrievalInference
-from retrieval.retrieval_model import BertEncoder
 from retrieval.bm25 import *
 from retrieval.elastic_search import ElasticSearch
 from retrieval.retrieval import SparseRetrieval
@@ -44,8 +41,11 @@ sys.path.append("./retrieval")
 
 logger = logging.getLogger(__name__)
 
-get_custom_class = {"custom1": "CustomRobertaLarge",
-                    "custom2": "CustomRobertaLarge", "custom3": "CustomRobertaLarge", }
+get_custom_class = {
+    "custom1": "CustomRobertaLarge",
+    "custom2": "CustomRobertaLarge",
+    "custom3": "CustomRobertaLarge",
+}
 
 
 def main():
@@ -89,15 +89,13 @@ def main():
     model_type = model_args.model_name.split("_")[0]
     if model_type == "pre":
         model = AutoModelForQuestionAnswering.from_pretrained(
-            model_args.model_name_or_path)
+            model_args.model_name_or_path
+        )
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name)
     elif model_type == "custom":
         model_name = model_args.model_name.split("_")[1]
         sys.path.append("./read/models")
-        model_module = getattr(
-            import_module(
-                model_name), get_custom_class[model_name]
-        )
+        model_module = getattr(import_module(model_name), get_custom_class[model_name])
         model = model_module()
         tokenizer = model.get_tokenizer()
         state_dict = torch.load(model_args.model_name_or_path)
@@ -120,33 +118,10 @@ def main():
                 data_args,
                 sparse_type=model_args.retrieval_name,
             )
-        elif model_args.retrieval_name == "dense":
-            datasets = run_dense_retrieval_topk(data_args, datasets)
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
-        run_mrc(data_args, training_args, model_args,
-                datasets, tokenizer, model)
-
-
-def run_dense_retrieval_topk(args: DataTrainingArguments, datasets: DatasetDict):
-
-    args.pickle_path = "../data/dense_embedding_20epoch.bin"
-
-    q_encoder = BertEncoder.from_pretrained(
-        "bert-base-multilingual-cased").cuda()
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-multilingual-cased")
-    wiki_data = WikiDataset(
-        "../data/wikipedia_documents.json", "bert-base-multilingual-cased"
-    )
-
-    retriever = RetrievalInference(args, q_encoder, tokenizer, wiki_data)
-    retriever.get_dense_embedding()
-
-    df = retriever.retrieval(datasets["validation"], topk=5)
-
-    datasets = DatasetDict({"validation": Dataset.from_pandas(df)})
-    return datasets
+        run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
 
 def run_sparse_retrieval(
@@ -176,8 +151,7 @@ def run_sparse_retrieval(
             datasets["validation"], topk=data_args.top_k_retrieval
         )
     else:
-        df = retriever.retrieve(
-            datasets["validation"], topk=data_args.top_k_retrieval)
+        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
@@ -247,8 +221,7 @@ def run_mrc(
 
             # 하나의 example이 여러개의 span을 가질 수 있습니다.
             sample_index = sample_mapping[i]
-            tokenized_examples["example_id"].append(
-                examples["id"][sample_index])
+            tokenized_examples["example_id"].append(examples["id"][sample_index])
 
             # context의 일부가 아닌 offset_mapping을 None으로 설정하여 토큰 위치가 컨텍스트의 일부인지 여부를 쉽게 판별할 수 있습니다.
             tokenized_examples["offset_mapping"][i] = [

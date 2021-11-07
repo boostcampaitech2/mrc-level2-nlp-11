@@ -1,28 +1,27 @@
 import os
 import pickle
+import argparse
+import json
+from tqdm.auto import tqdm
+
 import torch
 import numpy as np
 import pandas as pd
-import argparse
-
-from tqdm.auto import tqdm
 from transformers import AutoTokenizer
-from retrieval_model import BertEncoder
-from retrieval_dataset import WikiDataset
 
-from datasets import (
-    Dataset,
-    load_from_disk,
-    concatenate_datasets,
-)
+from dense_model import BertEncoder
+from datasets import load_from_disk
 
 
 class RetrievalInference:
-    def __init__(self, args, q_encoder, tokenizer, wiki_data) -> None:
+    def __init__(self, args, q_encoder, tokenizer, context_path) -> None:
         self.pickle_path = args.pickle_path
         self.q_encoder = q_encoder
         self.tokenizer = tokenizer
-        self.contexts = wiki_data.get_context()
+
+        with open(context_path, "r", encoding="utf-8") as f:
+            wiki = json.load(f)
+        self.contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
 
     def get_dense_embedding(self):
         emd_path = self.pickle_path
@@ -63,10 +62,9 @@ class RetrievalInference:
         return cqas
 
     def get_relevant_doc_bulk(self, queries, k=1):
-        # 수정 필요
         q_encoder = self.q_encoder
-
         q_embs = []
+
         with torch.no_grad():
             q_encoder.eval()
 
@@ -77,6 +75,7 @@ class RetrievalInference:
                 q_emb = q_encoder(**q).to("cpu").detach().numpy()
                 q_embs.append(q_emb)
 
+        q_embs = np.array(q_embs)
         q_embs = torch.Tensor(q_embs).squeeze()
         result = torch.matmul(q_embs, torch.transpose(self.p_embedding, 0, 1))
 
@@ -106,14 +105,14 @@ class RetrievalInference:
 
     def print_result(self, df, length):
         # for i in range(length):
-        #     print("=======================================")
-        #     f = df.iloc[i]
-        #     print(f'Question         : {f["question"]}')
-        #     print(f'original_context : {f["original_context"]}')
-        #     print("\n\n")
-        #     for i in range(len(f["context"])):
-        #         print(f'score\t:{f["scores"][i]},\ncontext\t: {f["context"][i]}\n')
-        #     print("=======================================")
+        # print("=======================================")
+        # f = df.iloc[i]
+        # print(f'Question         : {f["question"]}')
+        # print(f'original_context : {f["original_context"]}')
+        # print("\n\n")
+        # for i in range(len(f["context"])):
+        #     print(f'score\t:{f["scores"][i]},\ncontext\t: {f["context"][i]}\n')
+        # print("=======================================")
 
         print(
             "correct retrieval result by exhaustive search",
@@ -124,15 +123,11 @@ class RetrievalInference:
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="")
-
     parser.add_argument(
         "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
-        "--tokenizer_name",
-        default="bert-base-multilingual-cased",
-        type=str,
-        help="",
+        "--tokenizer_name", default="bert-base-multilingual-cased", type=str, help="",
     )
     parser.add_argument(
         "--pickle_path",
@@ -140,14 +135,12 @@ if __name__ == "__main__":
         type=str,
         help="wiki embedding path",
     )
-
     parser.add_argument(
         "--context_path",
         default="../../data/wikipedia_documents.json",
         type=str,
         help="context for retrieval",
     )
-
     parser.add_argument(
         "--load_path_q",
         default="./encoder/q_encoder",
@@ -158,18 +151,28 @@ if __name__ == "__main__":
     args = parser.parse_args()
     tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name)
     q_encoder = BertEncoder.from_pretrained(args.load_path_q).cuda()
-    wiki_data = WikiDataset(args.context_path, args.tokenizer_name)
 
     org_dataset = load_from_disk(args.dataset_name)
     train_dataset = org_dataset["train"]
     validation_dataset = org_dataset["validation"]
 
-    retrieval = RetrievalInference(args, q_encoder, tokenizer, wiki_data)
+    retrieval = RetrievalInference(args, q_encoder, tokenizer, args.context_path)
     retrieval.get_dense_embedding()
 
+    print("----- val top-5 -----")
     df = retrieval.retrieval(validation_dataset, topk=5)
-    # df = retrieval.retrieval(train_dataset, topk=50)
-
     df = retrieval.get_acc_score(df)
+    retrieval.print_result(df, 5)
+    print("----- val top-10 -----")
+    df = retrieval.retrieval(validation_dataset, topk=10)
+    df = retrieval.get_acc_score(df)
+    retrieval.print_result(df, 10)
 
-    retrieval.print_result(df, 2)
+    print("----- train top-5 -----")
+    df = retrieval.retrieval(train_dataset, topk=5)
+    df = retrieval.get_acc_score(df)
+    retrieval.print_result(df, 5)
+    print("----- train top-10 -----")
+    df = retrieval.retrieval(train_dataset, topk=10)
+    df = retrieval.get_acc_score(df)
+    retrieval.print_result(df, 10)
