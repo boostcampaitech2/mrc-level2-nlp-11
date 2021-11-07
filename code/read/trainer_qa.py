@@ -18,7 +18,7 @@ Question-Answering task와 관련된 'Trainer'의 subclass 코드 입니다.
 
 from transformers import Trainer, is_datasets_available, is_torch_tpu_available
 from transformers.trainer_utils import PredictionOutput
-from datasets import load_metric
+from datasets import load_metric, DatasetDict, Dataset
 
 
 if is_datasets_available():
@@ -33,11 +33,11 @@ class QuestionAnsweringTrainer(Trainer):
     def __init__(
         self,
         *args,
-        eval_examples=None,
-        max_answer_length=None,
+        eval_examples: Dataset = None,
+        max_answer_length: int = None,
         post_process_function=None,
-        dataset=None,
-        answer_column_name=None,
+        dataset: DatasetDict = None,
+        answer_column_name: str = None,
         **kwargs
     ):
         super().__init__(*args, **kwargs)
@@ -99,7 +99,7 @@ class QuestionAnsweringTrainer(Trainer):
         )
         return metrics
 
-    def predict(self, test_dataset, test_examples, ignore_keys=None):
+    def predict(self, test_dataset: Dataset, test_examples: Dataset, ignore_keys=None):
         test_dataloader = self.get_test_dataloader(test_dataset)
 
         # 일시적으로 metric computation를 불가능하게 한 상태이며, 해당 코드에서는 loop 내에서 metric 계산을 수행합니다.

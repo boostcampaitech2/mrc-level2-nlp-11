@@ -20,10 +20,12 @@ import collections
 import json
 import logging
 import os
-from typing import Optional, Tuple, Any
+import re
+from typing import Optional, Tuple, Any, NoReturn, Dict, OrderedDict, List
 
 import numpy as np
 from tqdm.auto import tqdm
+import pandas as pd
 
 import torch
 import random
@@ -36,7 +38,7 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 
-from datasets import DatasetDict, load_metric
+from datasets import Dataset, DatasetDict, load_metric, load_from_disk
 from arguments import (
     ModelArguments,
     DataTrainingArguments,
@@ -46,7 +48,7 @@ from arguments import (
 logger = logging.getLogger(__name__)
 
 
-def compute_metrics(metric, p: EvalPrediction):
+def compute_metrics(metric, p: EvalPrediction) -> Dict:
     result = metric.compute(predictions=p.predictions, references=p.label_ids)
 
     """
@@ -56,7 +58,7 @@ def compute_metrics(metric, p: EvalPrediction):
     # return metric.compute(predictions=p.predictions, references=p.label_ids)
 
 
-def set_seed(seed: int = 42):
+def set_seed(seed: int = 42) -> NoReturn:
     """
     seed 고정하는 함수 (random, numpy, torch)
 
@@ -74,6 +76,101 @@ def set_seed(seed: int = 42):
         torch.backends.cudnn.benchmark = False
 
 
+# context 전처리 함수
+def preprocess(text: str) -> str:
+    text = re.sub(r"\n", " ", text)
+    text = re.sub(r"\\n", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"#", " ", text)
+    text = re.sub(
+        r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣぁ-ゔァ-ヴー々〆〤一-龥<>()\s\.\?!》《≪≫\'<>〈〉:‘’%,『』「」＜＞・\"-“”∧]",
+        "",
+        text,
+    )
+    return text
+
+
+# 전처리된 context가 적용된 train dataset을 저장 및 반환하는 함수.
+def get_preprocess_dataset(
+    data_path: str = "/opt/ml/mrc-level2-nlp-11/data/",
+) -> DatasetDict:
+    path = f"{data_path}pre_train_dataset"
+    if os.path.isdir(path):
+        return load_from_disk(path)
+    else:
+        train_dataset = load_from_disk(f"{data_path}train_dataset")
+        t_train = train_dataset["train"]
+        t_val = train_dataset["validation"]
+        tmp_dict_val = []
+        tmp_dict_train = []
+
+        for datum in t_train:
+            answer_start = datum["answers"]["answer_start"][0]
+            context = datum["context"]
+            pre_bef_cont = preprocess(context[:answer_start])
+            pre_aft_cont = preprocess(context[answer_start:])
+            context = pre_bef_cont + pre_aft_cont
+            answer_start = len(pre_bef_cont)
+            datum["context"] = context
+            datum["answers"]["answer_start"][0] = answer_start
+            tmp_dict_train.append(datum)
+
+        for datum in t_val:
+            answer_start = datum["answers"]["answer_start"][0]
+            context = datum["context"]
+            pre_bef_cont = preprocess(context[:answer_start])
+            pre_aft_cont = preprocess(context[answer_start:])
+            context = pre_bef_cont + pre_aft_cont
+            answer_start = len(pre_bef_cont)
+            datum["context"] = context
+            datum["answers"]["answer_start"][0] = answer_start
+            tmp_dict_val.append(datum)
+
+        tmp_total_dt = DatasetDict(
+            {
+                "train": Dataset.from_pandas(pd.DataFrame(tmp_dict_train)),
+                "validation": Dataset.from_pandas(pd.DataFrame(tmp_dict_val)),
+            }
+        )
+        tmp_total_dt.save_to_disk(path)
+        return tmp_total_dt
+
+
+def get_preprocess_wiki(data_path: str = "/opt/ml/data/") -> List:
+    dataset_path = f"{data_path}wikipedia_documents.json"
+    pre_dataset_path = f"{data_path}preprocess_wikipedia_documents.json"
+
+    if not os.path.isfile(pre_dataset_path):
+        print("=" * 50)
+        print("preprocessing wikipedia documents not exist!")
+        print()
+        print("preprocessing wikipedia...")
+
+        with open(dataset_path, "r") as f:
+            wiki = json.load(f)
+
+        new_wiki = dict()
+        for ids in tqdm(range(len(wiki))):
+            wiki[str(ids)]["text"] = preprocess(wiki[str(ids)]["text"])
+            new_wiki[str(ids)] = wiki[str(ids)]
+        with open(
+            f"{data_path}preprocess_wikipedia_documents.json", "w", encoding="utf-8"
+        ) as make_file:
+            json.dump(new_wiki, make_file, indent="\t", ensure_ascii=False)
+        print("done!")
+        print("=" * 50)
+
+    print("loading wiki")
+    with open(pre_dataset_path, "r") as f:
+        wiki = json.load(f)
+    wiki_contexts = list(dict.fromkeys([v["text"] for v in wiki.values()]))
+
+    wiki_articles = [
+        {"document_text": wiki_contexts[i]} for i in range(len(wiki_contexts))
+    ]
+    return wiki_articles
+
+
 def postprocess_qa_predictions(
     examples,
     features,
@@ -85,7 +182,7 @@ def postprocess_qa_predictions(
     output_dir: Optional[str] = None,
     prefix: Optional[str] = None,
     is_world_process_zero: bool = True,
-):
+) -> OrderedDict:
     """
     Post-processes : qa model의 prediction 값을 후처리하는 함수
     모델은 start logit과 end logit을 반환하기 때문에, 이를 기반으로 original text로 변경하는 후처리가 필요함
@@ -132,7 +229,9 @@ def postprocess_qa_predictions(
     # k = 1 {mrc-1-001272:1, mrc-0-000944:2}
     # k = 5 {mrc-1-001272:4, mrc-0-000944:9}
     example_id_to_index = {k: i for i, k in enumerate(examples["id"])}
-    features_per_example = collections.defaultdict(list) # {"mrc-1-000653": [0, 1, 2, 3, 4, 5, 6]}
+    features_per_example = collections.defaultdict(
+        list
+    )  # {"mrc-1-000653": [0, 1, 2, 3, 4, 5, 6]}
     for i, feature in enumerate(features):
         features_per_example[example_id_to_index[feature["example_id"]]].append(i)
     # features_per_example
@@ -156,7 +255,7 @@ def postprocess_qa_predictions(
     logger.info(
         f"Post-processing {len(examples)} example predictions split into {len(features)} features."
     )
-    
+
     # 전체 example들에 대한 main Loop
     for example_index, example in enumerate(tqdm(examples)):
         # 해당하는 현재 example index
@@ -362,11 +461,11 @@ def postprocess_qa_predictions(
 def post_processing_function(
     examples,
     features,
-    predictions,
-    training_args,
-    max_answer_length,
-    datasets,
-    answer_column_name,
+    predictions: Tuple,
+    training_args: TrainingArguments,
+    max_answer_length: int,
+    datasets: DatasetDict,
+    answer_column_name: str,
 ):
     # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
     predictions = postprocess_qa_predictions(
@@ -435,7 +534,6 @@ def check_no_error(
     if "validation" not in datasets:
         raise ValueError("--do_eval requires a validation dataset")
     return last_checkpoint, max_seq_length
-
 
 
 ########################################## for concat ################################################

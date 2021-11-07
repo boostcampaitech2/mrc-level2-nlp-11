@@ -15,16 +15,24 @@ class ModelArguments:
         },
     )
     config_name: Optional[str] = field(
-        default=None,
+        default="klue/roberta-large",
         metadata={
             "help": "Pretrained config name or path if not the same as model_name"
         },
     )
     tokenizer_name: Optional[str] = field(
-        default=None,
+        default="klue/roberta-large",
         metadata={
             "help": "Pretrained tokenizer name or path if not the same as model_name"
         },
+    )
+    retrieval_name: str = field(
+        default="elastic",
+        metadata={"help": "retrieval type : elastic, BM25, dense, TFIDF"},
+    )
+    model_name: str = field(
+        default="pre_klue/bert-base",
+        metadata={"help": "model name for CustomModel"}
     )
 
 
@@ -76,7 +84,8 @@ class DataTrainingArguments:
     )
     eval_retrieval: bool = field(
         default=True,
-        metadata={"help": "Whether to run passage retrieval using sparse embedding."},
+        metadata={
+            "help": "Whether to run passage retrieval using sparse embedding."},
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
@@ -89,4 +98,7 @@ class DataTrainingArguments:
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+    pickle_path: str = field(
+        default="./", metadata={"help": "dense retrieval pickle path"}
     )
