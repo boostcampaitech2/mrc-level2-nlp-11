@@ -21,7 +21,7 @@ import json
 import logging
 import os
 import re
-from typing import Optional, Tuple, Any, NoReturn
+from typing import Optional, Tuple, Any, NoReturn, Dict, OrderedDict, List
 
 import numpy as np
 from tqdm.auto import tqdm
@@ -48,7 +48,7 @@ from arguments import (
 logger = logging.getLogger(__name__)
 
 
-def compute_metrics(metric, p: EvalPrediction):
+def compute_metrics(metric, p: EvalPrediction) -> Dict:
     result = metric.compute(predictions=p.predictions, references=p.label_ids)
 
     """
@@ -59,7 +59,7 @@ def compute_metrics(metric, p: EvalPrediction):
 
 
 # context 전처리 함수
-def preprocess(text):
+def preprocess(text: str) -> str:
     text = re.sub(r"\n", " ", text)
     text = re.sub(r"\\n", " ", text)
     text = re.sub(r"\s+", " ", text)
@@ -118,7 +118,7 @@ def get_preprocess_dataset(
         return tmp_total_dt
 
 
-def get_preprocess_wiki(data_path: str = "/opt/ml/data/"):
+def get_preprocess_wiki(data_path: str = "/opt/ml/data/") -> List:
     dataset_path = f"{data_path}wikipedia_documents.json"
     pre_dataset_path = f"{data_path}preprocess_wikipedia_documents.json"
 
@@ -153,7 +153,7 @@ def get_preprocess_wiki(data_path: str = "/opt/ml/data/"):
     return wiki_articles
 
 
-def set_seed(seed: int = 42):
+def set_seed(seed: int = 42) -> NoReturn:
     """
     seed 고정하는 함수 (random, numpy, torch)
 
@@ -182,7 +182,7 @@ def postprocess_qa_predictions(
     output_dir: Optional[str] = None,
     prefix: Optional[str] = None,
     is_world_process_zero: bool = True,
-):
+) -> OrderedDict:
     """
     Post-processes : qa model의 prediction 값을 후처리하는 함수
     모델은 start logit과 end logit을 반환하기 때문에, 이를 기반으로 original text로 변경하는 후처리가 필요함
@@ -434,11 +434,11 @@ def postprocess_qa_predictions(
 def post_processing_function(
     examples,
     features,
-    predictions,
-    training_args,
-    max_answer_length,
-    datasets,
-    answer_column_name,
+    predictions: Tuple,
+    training_args: TrainingArguments,
+    max_answer_length: int,
+    datasets: DatasetDict,
+    answer_column_name: str,
 ):
     # Post-processing: start logits과 end logits을 original context의 정답과 match시킵니다.
     predictions = postprocess_qa_predictions(

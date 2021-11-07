@@ -20,14 +20,15 @@ from datasets import (
     DatasetDict,
 )
 
-from transformers import AutoConfig, AutoModelForQuestionAnswering, AutoTokenizer
-
 from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
     TrainingArguments,
     set_seed,
+    AutoConfig,
+    AutoModelForQuestionAnswering,
+    AutoTokenizer,
 )
 
 from read.utils_qa import *
@@ -114,13 +115,15 @@ def main():
                 data_args,
                 sparse_type=model_args.retrieval_name,
             )
+        elif model_args.retrieval_name == "dense":
+            datasets = run_dense_retrieval_topk(data_args, datasets)
 
     # eval or predict mrc model
     if training_args.do_eval or training_args.do_predict:
         run_mrc(data_args, training_args, model_args, datasets, tokenizer, model)
 
 
-def run_dense_retrieval_topk(args, datasets):
+def run_dense_retrieval_topk(args: DataTrainingArguments, datasets: DatasetDict):
 
     args.pickle_path = "../data/dense_embedding_20epoch.bin"
 

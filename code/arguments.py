@@ -94,3 +94,6 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
+    pickle_path: str = field(
+        default="./", metadata={"help": "dense retrieval pickle path"}
+    )
