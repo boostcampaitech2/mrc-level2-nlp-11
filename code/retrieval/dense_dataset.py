@@ -4,16 +4,15 @@ import random
 import json
 import numpy as np
 import pandas as pd
-from datasets import load_from_disk
 
+from datasets import load_from_disk
+from torch.utils.data import TensorDataset
 from transformers import AutoTokenizer
 
 from func import retrieve_from_embedding
 
-from torch.utils.data import TensorDataset
 
-
-def TrainRetrievalDataset(tokenizer_name, dataset_name):
+def TrainRetrievalDataset(tokenizer_name: str, dataset_name: str) -> TensorDataset:
     print("get in-batch training sample")
     org_dataset = load_from_disk(dataset_name)
     train_data = org_dataset["train"]
@@ -40,7 +39,9 @@ def TrainRetrievalDataset(tokenizer_name, dataset_name):
 
 
 class TrainRetrievalRandomDataset(torch.utils.data.Dataset):
-    def __init__(self, tokenizer_name, dataset_name, num_neg, context_path):
+    def __init__(
+        self, tokenizer_name: str, dataset_name: str, num_neg: int, context_path: str
+    ):
         org_dataset = load_from_disk(dataset_name)
         self.train_data = org_dataset["train"]
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
@@ -119,7 +120,13 @@ class TrainRetrievalRandomDataset(torch.utils.data.Dataset):
 
 class TrainRetrievalInBatchDatasetDenseTopk(torch.utils.data.Dataset):
     def __init__(
-        self, tokenizer_name, dataset_name, num_neg, context_path, q_encoder, emb_path
+        self,
+        tokenizer_name: str,
+        dataset_name: str,
+        num_neg: int,
+        context_path: str,
+        q_encoder,
+        emb_path: str,
     ):
         dataset = load_from_disk(dataset_name)
         self.train_data = dataset["train"]

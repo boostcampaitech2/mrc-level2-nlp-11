@@ -40,7 +40,13 @@ from utils_qa import preprocess, get_preprocess_dataset, get_preprocess_wiki
 
 
 class DenseRetrieval:
-    def __init__(self, args, num_neg, p_encoder, q_encoder,) -> None:
+    def __init__(
+        self,
+        args,
+        num_neg: int,
+        p_encoder: BertEncoder,
+        q_encoder: BertEncoder,
+    ) -> None:
         self.args = args
         self.num_neg = num_neg
         self.p_encoder = p_encoder
@@ -49,7 +55,7 @@ class DenseRetrieval:
 
         torch.cuda.empty_cache()
 
-    def save_embedding(self, save_path):
+    def save_embedding(self, save_path: str):
 
         with open(self.args.context_path, "r", encoding="utf-8") as f:
             wiki = json.load(f)
@@ -86,7 +92,8 @@ class DenseRetrieval:
         # get in-batch dataset
         if args.in_batch:
             train_dataset = TrainRetrievalDataset(
-                args.tokenizer_name, args.dataset_name,
+                args.tokenizer_name,
+                args.dataset_name,
             )
             train_dataloader = DataLoader(
                 train_dataset, shuffle=True, batch_size=batch_size, drop_last=True
@@ -95,7 +102,10 @@ class DenseRetrieval:
         ## get negative samples from wiki for first epoch
         else:
             train_dataset = TrainRetrievalRandomDataset(
-                args.tokenizer_name, args.dataset_name, num_neg, args.context_path,
+                args.tokenizer_name,
+                args.dataset_name,
+                num_neg,
+                args.context_path,
             )
             train_dataloader = DataLoader(
                 train_dataset, shuffle=True, batch_size=batch_size
@@ -137,7 +147,9 @@ class DenseRetrieval:
             },
         ]
         optimizer = AdamW(
-            optimizer_grouped_parameters, lr=args.learning_rate, eps=args.adam_epsilon,
+            optimizer_grouped_parameters,
+            lr=args.learning_rate,
+            eps=args.adam_epsilon,
         )
         t_total = (
             len(train_dataloader)
@@ -145,7 +157,9 @@ class DenseRetrieval:
             * args.num_train_epochs
         )
         scheduler = get_linear_schedule_with_warmup(
-            optimizer, num_warmup_steps=args.warmup_steps, num_training_steps=t_total,
+            optimizer,
+            num_warmup_steps=args.warmup_steps,
+            num_training_steps=t_total,
         )
 
         global_step = 0
@@ -248,7 +262,10 @@ if __name__ == "__main__":
         "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
-        "--tokenizer_name", default="klue/bert-base", type=str, help="",
+        "--tokenizer_name",
+        default="klue/bert-base",
+        type=str,
+        help="",
     )
     parser.add_argument(
         "--context_path",
@@ -335,6 +352,11 @@ if __name__ == "__main__":
 
     wandb.init(entity="ai_esg", name=args.run_name)
 
-    retriever = DenseRetrieval(args, args.num_neg, p_encoder, q_encoder,)
+    retriever = DenseRetrieval(
+        args,
+        args.num_neg,
+        p_encoder,
+        q_encoder,
+    )
     retriever.train()
     retriever.save_embedding(args.save_pickle_path + ".bin")

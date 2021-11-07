@@ -14,7 +14,9 @@ from datasets import load_from_disk
 
 
 class RetrievalInference:
-    def __init__(self, args, q_encoder, tokenizer, context_path) -> None:
+    def __init__(
+        self, args, q_encoder: BertEncoder, tokenizer: AutoTokenizer, context_path: str
+    ):
         self.pickle_path = args.pickle_path
         self.q_encoder = q_encoder
         self.tokenizer = tokenizer
@@ -61,7 +63,7 @@ class RetrievalInference:
         cqas = pd.DataFrame(total)
         return cqas
 
-    def get_relevant_doc_bulk(self, queries, k=1):
+    def get_relevant_doc_bulk(self, queries: list, k=1):
         q_encoder = self.q_encoder
         q_embs = []
 
@@ -90,7 +92,7 @@ class RetrievalInference:
 
         return doc_scores, doc_indices
 
-    def get_acc_score(self, df):
+    def get_acc_score(self, df: pd.DataFrame):
         df["correct"] = False
         df["correct_rank"] = 0
         for i in tqdm(range(len(df)), desc="check tok_n"):
@@ -103,7 +105,7 @@ class RetrievalInference:
 
         return df
 
-    def print_result(self, df, length):
+    def print_result(self, df: pd.DataFrame, length: int):
         # for i in range(length):
         # print("=======================================")
         # f = df.iloc[i]
@@ -127,7 +129,10 @@ if __name__ == "__main__":
         "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
-        "--tokenizer_name", default="bert-base-multilingual-cased", type=str, help="",
+        "--tokenizer_name",
+        default="bert-base-multilingual-cased",
+        type=str,
+        help="",
     )
     parser.add_argument(
         "--pickle_path",

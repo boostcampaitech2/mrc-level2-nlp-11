@@ -21,7 +21,8 @@ import json
 import logging
 import os
 import re
-from typing import Optional, Tuple, Any, NoReturn, Dict, OrderedDict, List
+from typing import Optional, Tuple, Any, NoReturn, Dict, List
+from collections import OrderedDict
 
 import numpy as np
 from tqdm.auto import tqdm
