@@ -42,7 +42,8 @@ class BM25Retrieval:
             wiki = json.load(f)
 
         self.contexts = list(
-            dict.fromkeys([v["title"] + ": " + v["text"] for v in wiki.values()])
+            dict.fromkeys([v["title"] + ": " + v["text"]
+                           for v in wiki.values()])
         )
 
         self.b = b
@@ -177,7 +178,8 @@ class BM25Retrieval:
     ) -> Union[Tuple[List, List], pd.DataFrame]:
         assert self.idf is not None
         if isinstance(query_or_dataset, str):
-            doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
+            doc_scores, doc_indices = self.get_relevant_doc(
+                query_or_dataset, k=topk)
             print("[Search query]\n", query_or_dataset, "\n")
 
             for i in range(topk):
@@ -223,7 +225,7 @@ if __name__ == "__main__":
         "--random_seed", default=211, type=int, help="random seed for numpy and torch"
     )
     parser.add_argument(
-        "--dataset_name", default="../../../data/train_dataset", type=str, help=""
+        "--dataset_name", default="../../data/train_dataset", type=str, help=""
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -232,7 +234,7 @@ if __name__ == "__main__":
         help="",
     )
     parser.add_argument(
-        "--data_path", default="../../../data", type=str, help="dataset directory path"
+        "--data_path", default="../../data", type=str, help="dataset directory path"
     )
     parser.add_argument(
         "--context_path",
@@ -265,7 +267,8 @@ if __name__ == "__main__":
     )
     print("*" * 40, "query dataset loaded", "*" * 40)
 
-    retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize, is_retrain=args.retrain)
+    retriever = BM25Retrieval(tokenize_fn=tokenizer.tokenize,
+                              is_retrain=args.retrain, data_path=args.data_path)
 
     retriever.get_sparse_embedding()
 
