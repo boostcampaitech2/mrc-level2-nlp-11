@@ -5,10 +5,12 @@
 **/results/*
 **/prediction/*
 **/best_model/*
-**/models/*
 **/.*/
 **/outputs/
 !.gitignore
 !sample_submission.csv
 nohup.*
 **run.sh
+**/elasticsearch-7.9.2/*
+**elasticsearch-7.9.2-linux-x86_64.tar.gz
+**/saved_checkpoint/*
