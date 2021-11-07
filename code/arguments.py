@@ -30,6 +30,10 @@ class ModelArguments:
         default="elastic",
         metadata={"help": "retrieval type : elastic, BM25, dense, TFIDF"},
     )
+    model_name: str = field(
+        default="pre_klue/bert-base",
+        metadata={"help": "model name for CustomModel"}
+    )
 
 
 @dataclass
@@ -80,7 +84,8 @@ class DataTrainingArguments:
     )
     eval_retrieval: bool = field(
         default=True,
-        metadata={"help": "Whether to run passage retrieval using sparse embedding."},
+        metadata={
+            "help": "Whether to run passage retrieval using sparse embedding."},
     )
     num_clusters: int = field(
         default=64, metadata={"help": "Define how many clusters to use for faiss."}

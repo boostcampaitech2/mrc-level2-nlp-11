@@ -43,7 +43,8 @@ class Reader:
         The method for getting model and tokenizer
     """
 
-    get_custom_class = {"custom1": "CustomRobertaLarge"}
+    get_custom_class = {"custom1": "CustomRobertaLarge",
+                        "custom2": "CustomRobertaLarge", "custom3": "CustomRobertaLarge", }
 
     def __init__(
         self,
@@ -89,7 +90,8 @@ class Reader:
             sys.path.append("./models")
             # Custom_model일경우 model_name.py에서 tokenizer, config도 받아와야한다.
             model_module = getattr(
-                import_module(self.model_name), self.get_custom_class[self.model_name]
+                import_module(
+                    self.model_name), self.get_custom_class[self.model_name]
             )
             self.model = model_module()
             self.tokenizer = self.model.get_tokenizer()
@@ -200,10 +202,12 @@ class Reader:
                         and offsets[token_start_index][0] <= start_char
                     ):
                         token_start_index += 1
-                    tokenized_examples["start_positions"].append(token_start_index - 1)
+                    tokenized_examples["start_positions"].append(
+                        token_start_index - 1)
                     while offsets[token_end_index][1] >= end_char:
                         token_end_index -= 1
-                    tokenized_examples["end_positions"].append(token_end_index + 1)
+                    tokenized_examples["end_positions"].append(
+                        token_end_index + 1)
 
         return tokenized_examples
 
@@ -255,7 +259,8 @@ class Reader:
 
             # 하나의 example이 여러개의 span을 가질 수 있습니다.
             sample_index = sample_mapping[i]
-            tokenized_examples["example_id"].append(examples["id"][sample_index])
+            tokenized_examples["example_id"].append(
+                examples["id"][sample_index])
 
             # Set to None the offset_mapping을 None으로 설정해서 token position이 context의 일부인지 쉽게 판별 할 수 있습니다.
             tokenized_examples["offset_mapping"][i] = [
